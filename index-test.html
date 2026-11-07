@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+
+<html lang="ja">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="#47322c" name="theme-color"/>
+<title>FLAT MOTION | ベクターキャラクターアニメーション</title>
+<link href="styles.css" rel="stylesheet"/>
+</head>
+<body>
+<div id="app">
+<header class="app-header">
+<div class="brand"><div class="brand-mark"><img alt="" draggable="false" src="assets/decorations/brand-emblem.png"/></div><div class="brand-text"><strong>FLAT <em>MOTION</em></strong><small>ベクターアニメーションスタジオ</small></div><img alt="" class="brand-leaf" draggable="false" src="assets/decorations/header-branch.png"/></div>
+
+<div class="stage-tools"><button class="history-tool-btn" data-action="undo" title="元に戻す Ctrl+Z" aria-label="元に戻す"><span class="history-tool-symbol" aria-hidden="true">↶</span><span class="history-tool-label">戻す</span></button><button class="history-tool-btn" data-action="redo" title="やり直し Ctrl+Y" aria-label="やり直す"><span class="history-tool-symbol" aria-hidden="true">↷</span><span class="history-tool-label">進む</span></button><span class="stage-separator"></span><button aria-controls="subviewWindow" aria-expanded="false" aria-label="サブビューを開く" class="subview-launch" data-action="toggleSubview" id="subviewToggle" title="資料画像とスポイトのサブビューを開く" type="button"><img class="subview-launch-icon" src="assets/subview.png" alt=""></button><span class="stage-separator"></span><button data-action="toggleSmartGuides" id="fmSmartGuidesToggle" class="fm-snap-active" aria-pressed="true" title="オブジェクトの端・中心への自動吸着 ON/OFF">吸着 ON</button><button data-action="toggleGrid" id="gridButton" title="グリッドの切替">▦</button><button data-action="fit" title="キャンバスに合わせる">全体表示</button><button data-action="zoomOut" title="縮小">−</button><span id="zoomLabel">100%</span><button data-action="zoomIn" title="拡大">＋</button></div><div class="header-actions">
+<button aria-label="新規" class="top-btn subtle" data-action="new" title="新規作成"><img alt="" aria-hidden="true" class="header-file-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/22.png"/><span class="header-file-label">新規</span></button>
+<button aria-label="開く" class="top-btn subtle" data-action="load" title="プロジェクト読込"><img alt="" aria-hidden="true" class="header-file-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/26.png"/><span class="header-file-label">開く</span></button>
+<button aria-label="保存" class="top-btn subtle" data-action="save" title="プロジェクト保存"><img alt="" aria-hidden="true" class="header-file-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/25.png"/><span class="header-file-label">保存</span></button>
+<div class="header-divider small"></div>
+<button aria-label="書き出し" class="top-btn accent" data-action="exportMenu"><img alt="" aria-hidden="true" class="header-file-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/27.png"/><span class="header-file-label">書き出し</span></button>
+<button aria-label="完全マニュアルを開く" class="circle-btn" data-action="help" title="完全マニュアル"><img alt="" draggable="false" src="assets/help.png"/></button>
+</div>
+<img alt="" class="header-flower" draggable="false" src="assets/decorations/header-flowers.png"/></header>
+<section id="floatingTools" class="floating-tools" aria-label="移動式描画ツールパレット">
+  <div class="floating-tools-title" id="floatingToolsHandle" title="ここをドラッグして移動">
+    <span class="floating-tools-grip" aria-hidden="true">⠿</span>
+    <div class="floating-tools-actions">
+      <button type="button" id="floatingToolsMenuButton" aria-label="ツールパレットのメニュー" aria-haspopup="true" aria-controls="floatingToolsMenu" aria-expanded="false" title="パレット設定">≡</button>
+      <button type="button" id="floatingToolsCollapse" aria-expanded="true" title="パレットを折りたたむ" aria-label="ツールパレットを折りたたむ">−</button>
+    </div>
+  </div>
+  <div id="floatingToolsMenu" class="floating-tools-menu" role="menu" aria-label="ツールパレット設定" hidden>
+    <button type="button" id="floatingToolsColumns" role="menuitemcheckbox" aria-checked="false">▦ 1列／2列を切り替え</button>
+    <button type="button" id="floatingToolsReset" role="menuitem">↺ パレット位置を初期化</button>
+  </div>
+  <nav aria-label="描画ツール" class="header-tools tools-grid" id="toolsGrid">
+<button aria-label="選択" class="tool-btn active" data-tool="select" title="移動・選択 (V)"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/01.png"/><span class="tool-label">選択</span></button>
+<button aria-label="切り抜き" class="tool-btn" data-tool="crop" title="選択範囲の内側を削除 (C)"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/05.png"/><span class="tool-label">切り抜き</span></button>
+<button aria-label="グラデーション" class="tool-btn" data-tool="gradient" title="オブジェクト上をドラッグして線状・円状グラデーションを作成"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/19.png"/><span class="tool-label">グラデーション</span></button>
+<button aria-label="頂点" class="tool-btn" data-tool="node" title="頂点編集・キーフレーム変形 (N / M)"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/vertex-tool-icon.png"/><span class="tool-label">頂点</span></button>
+<button aria-label="ベジェ塗り" class="tool-btn" data-tool="pen" title="塗りつぶしベジェを描画 (P)"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/07.png"/><span class="tool-label">ベジェ塗り</span></button>
+<button aria-label="ベジェ線画" class="tool-btn" data-tool="strokePen" title="線のみのベジェ曲線 (K)"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/08.png"/><span class="tool-label">ベジェ線画</span></button>
+<button aria-label="直線" class="tool-btn" data-tool="line" title="直線をドラッグで作成 (L)"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/09.png"/><span class="tool-label">直線</span></button>
+<button aria-label="フリーハンド" class="tool-btn" data-tool="brush" title="フリーハンドで描画 (B)"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/15.png"/><span class="tool-label">フリーハンド</span></button>
+<button aria-label="ラフ作画（ラスター）" class="tool-btn" data-tool="raster" title="ラスターのペン・消しゴム"><span class="tool-glyph text-tool-glyph" aria-hidden="true">✎</span><span class="tool-label">ラフ作画</span></button>
+<button aria-label="四角形" class="tool-btn" data-tool="rect" title="四角形を描画 (R)"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/10.png"/><span class="tool-label">四角形</span></button>
+<button aria-label="楕円" class="tool-btn" data-tool="ellipse" title="楕円を描画 (E)"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/11.png"/><span class="tool-label">楕円</span></button>
+<button aria-label="三角形" class="tool-btn" data-tool="triangle" title="三角形を描画（向きはツール設定で選択）"><span class="tool-glyph text-tool-glyph" aria-hidden="true">△</span><span class="tool-label">三角形</span></button>
+<button aria-label="テキスト" class="tool-btn" data-tool="text" title="テキストを配置 (T)"><span class="tool-glyph text-tool-glyph" aria-hidden="true">T</span><span class="tool-label">テキスト</span></button>
+<button aria-label="メッシュ" class="tool-btn" data-tool="mesh" title="メッシュ変形 (G)"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/49.png"/><span class="tool-label">メッシュ</span></button>
+<button aria-label="回転軸" class="tool-btn" data-tool="pivot" title="関節の回転軸設定 (J)"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/04.png"/><span class="tool-label">回転軸</span></button>
+<button aria-label="手のひら" class="tool-btn" data-tool="hand" title="キャンバス移動 (H)"><img alt="" aria-hidden="true" class="tool-glyph ui-icon-img" draggable="false" src="assets/ui/matcha/02.png"/><span class="tool-label">手のひら</span></button>
+</nav>
+</section>
+<div id="fmLayerMenuPopup" class="fm-layer-menu-popup" role="menu" hidden>
+<div class="fm-layer-menu-top">レイヤーメニュー <button type="button" id="fmLayerMenuClose" aria-label="メニューを閉じる">×</button></div>
+<div class="layer-palette-opacity" id="layerPaletteOpacity" aria-label="選択レイヤーの不透明度">
+  <div class="layer-palette-opacity-heading"><label for="fmLayerOpacitySlider">レイヤー透明度</label><output id="fmLayerOpacityValue" for="fmLayerOpacitySlider">100%</output></div>
+  <input id="fmLayerOpacitySlider" type="range" min="0" max="100" step="1" value="100" data-layer-opacity="1" aria-label="選択中のレイヤーの不透明度" disabled />
+  <div class="layer-palette-opacity-caption" id="fmLayerOpacityHint">レイヤーを選択してください</div>
+</div>
+<div class="fm-layer-menu-inside" style="padding:10px 12px"><button type="button" class="soft-btn primary wide" data-action="createLinkedClone">◇ 選択レイヤー／フォルダーをクローン</button><small style="display:block;margin-top:7px">元フォルダーの図形を1つの統合オブジェクトとして表示。内部境界は消し、クローン側のアウトラインは外周だけに適用します。</small></div>
+<details class="fm-layer-menu-section" open><summary>◇ シェイプ形成 / パスファインダー <span aria-hidden="true">▸</span></summary>
+<div class="fm-layer-menu-inside"><div class="fm-geometry-toolbar" aria-label="パスファインダー">
+  <div class="fm-geometry-heading">◇ シェイプ形成 / パスファインダー <small>チェックで2個以上選択</small></div>
+  <div class="fm-geometry-buttons">
+    <button data-action="pathUnion" type="button" title="選択した図形を1つの輪郭へ合体">合体</button>
+    <button data-action="pathSubtract" type="button" title="下の図形から上の図形を型抜き">前面型抜き</button>
+    <button data-action="pathIntersect" type="button" title="重なった部分のみを残す">交差</button>
+    <button data-action="pathDivide" type="button" title="重なりの部分とそれ以外を別オブジェクトへ分割">分割</button>
+  </div>
+  <label class="fm-geometry-retain"><input id="fmGeometryKeepSource" type="checkbox" checked> 元の図形を残す（非表示にする）</label>
+</div></div></details>
+</div>
+<div class="main-grid">
+<aside class="sidebar left-sidebar">
+<section class="left-section palette-section is-collapsed" id="paletteSection"><button type="button" class="palette-fold-toggle" id="paletteToggle" data-action="togglePalette" aria-controls="paletteBody" aria-expanded="false" title="カラーパレットを開く・閉じる"><span class="left-section-title-text"><img alt="" draggable="false" src="assets/ui/color/32.png"/> カラーパレット</span><span class="palette-current-color" id="paletteCurrentColor" aria-hidden="true"></span><span class="palette-chevron" aria-hidden="true">▾</span></button>
+<div class="palette-body" id="paletteBody"><div class="palette-grid" id="paletteGrid"></div>
+<div class="palette-custom"><span>描画色</span><label class="color-control"><input id="drawColor" type="color" value="#c78b7b"/><span id="drawColorCode">#C78B7B</span></label></div></div>
+</section>
+<section class="left-section layers-section">
+<nav class="material-tabs fm-layer-tabs" role="tablist" aria-label="レイヤー・素材の切替"><button id="fmLayerMenuButton" class="fm-layer-menu-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="fmLayerMenuPopup" title="レイヤーメニュー">☰</button>
+<button id="materialTabLayers" class="material-tab active" type="button" role="tab" aria-selected="true" data-library-tab="layers">レイヤー</button><button id="materialTabLibrary" class="material-tab" type="button" role="tab" aria-selected="false" data-library-tab="library">素材</button></nav>
+<div class="layer-panel-view" id="layerPanel">
+<div class="section-title"><span class="left-section-title-text"><img alt="" draggable="false" src="assets/ui/color/32.png"/>キャラクターパーツ</span><span class="section-note">パーツ・重なり</span></div>
+<div class="layer-toolbar"><button class="asset-add" data-action="createRaster" title="透明ラスターレイヤーを追加">＋ ラスター</button><button class="asset-add" data-action="create3D" title="3D下書きレイヤーを追加">＋ 3D</button><button class="asset-add" data-action="import" title="SVG/PNG素材を追加">＋ 素材</button><button aria-label="フォルダーを作成" class="folder-add" data-action="newFolder" title="フォルダー作成（選択パーツを収納）"><img alt="" class="layer-action-image action-newFolder" draggable="false" src="assets/ui/choco/23.png"/></button><button aria-label="レイヤー複製" class="duplicate-icon-btn" data-action="duplicate" title="レイヤー複製"><img alt="" aria-hidden="true" class="copy-art" draggable="false" src="assets/copy.png"/></button></div>
+
+<div class="layer-merge-row"><button id="mergeLayersButton" type="button" data-action="mergeLayers" disabled title="チェックボックスで2個以上選択してください"><span aria-hidden="true">◇</span> オブジェクトを統合</button><button id="unmergeLayersButton" type="button" class="unmerge-layer-btn" data-action="unmergeLayers" disabled title="統合オブジェクトを選択してください">統合解除</button><span id="mergeSelectionCount">2個以上選択</span></div>
+
+<div class="layer-ops-toolbar" role="group" aria-label="選択レイヤーの操作">
+<button type="button" aria-label="レイヤーを前面へ" data-action="up" title="レイヤーを前面へ"><img alt="" class="layer-action-image action-up" draggable="false" src="assets/layer-front.png"/><span>前面へ</span></button>
+<button type="button" aria-label="レイヤーを背面へ" data-action="down" title="レイヤーを背面へ"><img alt="" class="layer-action-image action-down" draggable="false" src="assets/layer-back.png"/><span>背面へ</span></button>
+<button type="button" id="clearLayerContentsButton" aria-label="レイヤーの描画内容をクリア" data-action="clearLayerContents" title="選択レイヤーの描画内容だけを消去（レイヤー自体は残します）"><img alt="" class="layer-action-image action-clear" draggable="false" src="assets/layer-clear.png"/><span>描画クリア</span></button>
+<button type="button" id="deleteLayerButton" aria-label="レイヤーを削除" data-action="delete" title="選択レイヤーを削除（フォルダーは中身も削除）"><img alt="" class="layer-action-image action-delete" draggable="false" src="assets/layer-trash.png"/><span>レイヤー削除</span></button>
+</div>
+<div class="folder-drop-root" id="folderDropRoot" title="ここへドラッグしてフォルダーから取り出す">↰ フォルダー外へ移動（ドロップ）</div><div class="layer-list" id="layerList"><div class="blank-state small">描いたパーツがここに並びます。</div></div>
+
+</div>
+<div class="library-panel-view hidden" id="libraryPanel" aria-label="素材ライブラリ">
+  <div class="library-headline"><strong>素材ライブラリ</strong><small>プロジェクト共通</small></div>
+  <div class="library-toolbar"><button type="button" data-library-action="register" title="選択中のレイヤーまたはフォルダーを登録">＋ 登録</button><button type="button" data-library-action="new-folder" title="ライブラリ用のフォルダーを追加">＋ フォルダー</button></div>
+  <div class="library-search-wrap"><input id="librarySearch" type="search" placeholder="素材名・フォルダー名で検索" autocomplete="off" aria-label="ライブラリを検索" /><button type="button" data-library-action="clear-search" title="検索を消去">×</button></div>
+  <div id="libraryBreadcrumbs" class="library-breadcrumbs" aria-label="フォルダーの現在位置"></div>
+  <div class="library-list" id="libraryList"><div class="blank-state small">ライブラリを読み込んでいます。</div></div>
+  <div class="library-transfer"><button type="button" data-library-action="export" title="素材ライブラリをJSONでバックアップ">JSON保存</button><button type="button" data-library-action="import" title="バックアップを読み込む">JSON読込</button><select id="libraryImportMode" aria-label="読み込み方法"><option value="merge">追加する</option><option value="replace">置き換え</option></select></div>
+  <div id="libraryInfo" class="library-info">素材ライブラリはFMSと別に保存されます。</div>
+</div>
+<img alt="" class="layers-leaf-deco" draggable="false" src="assets/decorations/sidebar-left-botanical.png"/></section>
+<div class="left-bottom"><button class="text-link" data-action="demo">✦ サンプルキャラクターを作成</button><button class="text-link light" data-action="clear">すべて削除</button></div>
+</aside>
+<main class="stage-area">
+<div class="stage-toolbar">
+<div class="stage-label"><span class="stage-dot"></span><strong>アートボード</strong><span class="stage-size" id="stageSize">960 × 540</span></div>
+<div class="workspace-panel-actions"><button type="button" class="timeline-pane-toggle" id="timelineToggleButton" data-action="toggleTimeline" aria-controls="timelinePanel" aria-expanded="true" title="タイムラインを閉じてキャンバスを広げる"><span class="timeline-toggle-symbol" aria-hidden="true">▤</span><span id="timelineToggleLabel">タイムラインを閉じる</span><span class="timeline-toggle-arrow" aria-hidden="true">▾</span></button><button type="button" class="inspector-pane-toggle" id="inspectorToggleButton" data-action="toggleInspector" aria-expanded="true" aria-controls="inspectorSidebar" title="プロパティパネルを閉じる"><span class="inspector-toggle-arrow" aria-hidden="true">❯</span><span id="inspectorToggleLabel">プロパティを閉じる</span></button></div>
+</div>
+<div class="stage-viewport" id="stageViewport"><div class="pen-controls hidden" id="penControls"><span class="pen-title">✒ パス作成中 <b id="penCount">0 点</b></span><button class="pen-commit" data-action="finishPenClosed" id="penClose">塗りを確定</button><button data-action="finishPenOpen" id="penOpen">開いた線で確定</button><button data-action="undoPenPoint" title="ひとつ前の点を取り消し">↶</button><button data-action="cancelPen" title="キャンセル">✕</button></div><div class="stage-center" id="stageCenter"><div class="artboard-shell" id="artboardShell"><svg aria-label="ベクターアニメーションキャンバス" id="artboard" xmlns="http://www.w3.org/2000/svg"></svg><div class="empty-canvas" id="emptyCanvas" style="display:none"><div class="empty-illustration"><img alt="" draggable="false" src="assets/decorations/center-sparkle-centered.png"/></div><strong>ここから、アニメーションのイラストをつくりましょう。</strong><span>上部のツールで形を描いたり、SVG（ベクター）を読み込んだりできます。</span><button class="empty-demo" data-action="demo"><img alt="" aria-hidden="true" class="ui-icon-img" draggable="false" src="assets/ui/choco/23.png"/> サンプルを試してみる</button><img alt="" class="empty-corner-flourish" draggable="false" src="assets/decorations/artboard-corner-botanical.png"/></div></div></div></div>
+<div class="stage-footer"><span id="stageStatus">準備完了</span><span>SVG ベクター · ブラウザ内で動作</span></div>
+</main>
+<aside class="sidebar right-sidebar" id="inspectorSidebar" aria-label="プロパティパネル">
+<div class="inspector-dock-header"><strong>プロパティ</strong><button type="button" class="inspector-dock-close" data-action="toggleInspector" aria-label="プロパティパネルを閉じる" title="パネルを畳んでキャンバスを広げる">❯</button></div>
+<nav aria-label="プロパティの切り替え" class="inspector-tabs" role="tablist">
+<button aria-selected="true" class="inspector-tab active" data-inspector-tab="layer" role="tab" type="button">レイヤー</button>
+<button aria-selected="false" class="inspector-tab" data-inspector-tab="motion" role="tab" type="button">モーション</button>
+<button aria-selected="false" class="inspector-tab" data-inspector-tab="tool" role="tab" type="button">ツール</button>
+<button aria-selected="false" class="inspector-tab" data-inspector-tab="canvas" role="tab" type="button">キャンバス</button>
+</nav>
+<div class="inspector-scroll" id="inspector"></div>
+<img alt="" class="inspector-leaf-deco" draggable="false" src="assets/decorations/inspector-bottom-botanical.png"/><img alt="" aria-hidden="true" class="inspector-hills-deco" draggable="false" src="assets/decorations/inspector-hills.png"/></aside>
+<section class="timeline-panel" id="timelinePanel" aria-label="タイムライン"><div class="timeline-quickbar">
+<div class="timeline-quick-left">
+<button data-action="import" title="SVG・PNG素材を読み込む">＋　タイムラインに素材を追加</button>
+<i aria-hidden="true"></i>
+<button data-action="clear" title="全レイヤーを削除">すべて削除</button>
+<i aria-hidden="true"></i>
+<span>編集データはブラウザ内でも保存されます</span>
+</div>
+<span>SVG / ベクター・ブラウザ内で動作</span>
+</div>
+<div class="timeline-toolbar"><div class="tl-left"><span class="tl-caption"><img alt="" draggable="false" src="assets/ui/color/32.png"/> タイムライン</span><button type="button" class="timeline-inline-close" data-action="toggleTimeline" aria-label="タイムラインを閉じる" title="作画スペースを広げる">▾ 閉じる</button><button data-action="first" title="先頭へ">|◀</button><button class="play-button" data-action="play" id="playButton" title="再生 / 停止 (Space)">▶</button><button data-action="next" title="次のフレーム">▶|</button><span class="time-display" id="timeDisplay">00:00 / 00:06</span></div><div class="tl-right"><label class="check-small"><input checked="" id="autoKey" type="checkbox"/> 自動キー</label><label class="check-small"><input id="onionPrev" type="checkbox"/> 前フレーム</label><label class="check-small"><input id="onionNext" type="checkbox"/> 次フレーム</label><span class="tl-sep"></span><button class="audio-add-btn" data-action="importAudio" title="MP3・WAV・OGGなどの音声をタイムラインに追加">＋ 音声</button><button class="pill-button" data-action="addKey">◆ キー追加</button><button class="pill-button ghost" data-action="removeKey">◇ 削除</button></div></div>
+<div class="timeline-scroller" id="timelineScroller"><div class="timeline-inner" id="timelineInner"></div></div>
+<div class="timeline-bottom"><div class="timeline-tip">♪ 音声クリップは左右ドラッグで移動 ／ ◆ 位置・回転 ／ <span class="morph-legend">● 頂点</span> ／ <span class="mesh-legend">■ メッシュ</span> （ドラッグでキー移動）</div><div class="tl-frame" id="frameCounter">FRAME 000 / 072</div></div>
+</section>
+</div>
+</div>
+<!-- The subview is a movable workspace window; its images are references, not artwork layers. -->
+<section aria-label="資料サブビュー" aria-modal="false" class="subview-window is-hidden" id="subviewWindow" role="dialog">
+<div class="subview-titlebar" id="subviewTitlebar"><div class="subview-title"><span class="subview-dot"></span><strong>SUB VIEW</strong><span>資料・カラー抽出</span></div><button aria-label="サブビューを閉じる" class="subview-close" id="subviewClose" title="閉じる" type="button">×</button></div>
+<div class="subview-toolbar">
+<button class="subview-primary" id="subviewAdd" type="button">＋ 画像を追加</button>
+<button aria-label="前の画像" class="subview-small" id="subviewPrev" title="前の画像" type="button">‹</button>
+<span class="subview-counter" id="subviewCount">0 / 0</span>
+<button aria-label="次の画像" class="subview-small" id="subviewNext" title="次の画像" type="button">›</button>
+<button aria-label="現在の画像を削除" class="subview-small subview-delete" id="subviewDelete" title="現在の画像を削除" type="button">×</button>
+</div>
+<div aria-label="登録した資料画像" class="subview-thumbnails" id="subviewThumbs"></div>
+<div class="subview-image-area" id="subviewImageArea">
+<canvas aria-label="クリックで色を抽出する資料画像" id="subviewCanvas"></canvas>
+<div class="subview-empty" id="subviewEmpty"><div class="subview-empty-icon"><img src="assets/subview.png" alt=""></div><strong>参考画像を開く</strong><span>PNG・JPG・WebP・GIF・BMP<br/>複数枚を切り替えて表示できます</span><button id="subviewEmptyAdd" type="button">画像を読み込む</button><small>ドラッグ＆ドロップも対応</small></div>
+<div class="subview-image-caption" id="subviewFilename"></div>
+</div>
+<div class="subview-viewbar">
+<div aria-label="資料の操作" class="subview-mode-buttons" role="group"><button class="active" data-subview-mode="pick" title="クリックで色を取得" type="button">スポイト</button><button data-subview-mode="pan" title="ドラッグで資料を移動" type="button">手のひら</button></div>
+<span class="subview-spacer"></span><button id="subviewZoomOut" title="縮小" type="button">−</button><output id="subviewZoomLabel">100%</output><button id="subviewZoomIn" title="拡大" type="button">＋</button><button id="subviewFit" title="ウィンドウに合わせる" type="button">全体</button>
+</div>
+<div class="subview-colorbar">
+<span class="subview-swatch" id="subviewSampleSwatch" style="background:#c78b7b"></span>
+<div class="subview-color-value"><strong id="subviewHex">#C78B7B</strong><small id="subviewColorHint">画像をクリックして色を取得</small></div>
+<button id="subviewCopyColor" title="色コードをコピー" type="button">コピー</button>
+</div>
+<div class="subview-footer"><button id="subviewApplyColor" type="button">選択中の塗りに反映</button><span>ホイール：拡縮 ／ 手のひら：移動</span></div>
+</section>
+<input accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden="" id="subviewFiles" multiple="" type="file"/>
+<div class="popup hidden" id="exportPopup" role="menu"><div class="popup-title">書き出し形式</div><button data-action="exportPNG">静止画 PNG <small>現在のフレーム</small></button><button data-action="exportPSD">レイヤー PSD <small>グループとクリッピング保持</small></button><button data-action="exportSVG">ベクター SVG <small>レイヤー階層を整理して出力</small></button><button data-action="exportHTML">アニメーション HTML <small>単体で再生できる</small></button><button data-action="exportFrames">PNG連番 ZIP <small>透過対応・編集ソフト向け</small></button><button data-action="exportWEBM">動画 WebM <small>音声トラックも含む</small></button></div>
+<div class="modal-backdrop hidden" id="modal"><div class="modal-card"><div class="modal-top"><strong id="modalTitle">設定</strong><button aria-label="閉じる" data-action="closeModal">✕</button></div><div id="modalBody"></div></div></div>
+<div class="toast hidden" id="toast"></div>
+<input accept=".json,.fms,application/json" hidden="" id="fileProject" type="file"/>
+<input accept=".svg,.png,image/svg+xml,image/png" hidden="" id="fileAssets" multiple="" type="file"/>
+<input accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.webm" hidden="" id="fileAudio" multiple="" type="file"/>
+<input accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" hidden="" id="fileFonts" multiple="" type="file"/>
+<input id="libraryJsonFile" type="file" accept=".json,application/json" style="display:none" aria-label="素材ライブラリのJSONを選択" />
+<div id="fm3dModal" class="fm3d-modal" hidden><div class="fm3d-dialog" role="dialog" aria-modal="true" aria-label="3D下書きレイヤー編集">
+ <header class="fm3d-header"><div class="fm3d-title"><strong>▧ 3D下書きワークスペース</strong><span>複数モデルを組み合わせてアタリを作成</span></div><button id="fm3dClose" type="button" aria-label="閉じる">✕</button></header>
+ <div class="fm3d-main"><aside class="fm3d-library"><div class="fm3d-panel-heading"><strong>オブジェクト一覧</strong><span id="fm3dObjectCount">0</span></div><label class="fm3d-file">＋ モデルを追加<input id="fm3dFile" type="file" accept=".obj,.fbx,.vrm,.glb,.gltf" multiple hidden></label><div class="fm3d-formats">OBJ / FBX / VRM / GLB</div><div id="fm3dObjects" class="fm3d-objects" aria-label="読み込み済みモデル一覧"></div><div class="fm3d-list-help">モデル名をクリックして選択できます。<br>目のアイコンで表示を切り替えます。</div></aside><section class="fm3d-view"><div class="fm3d-view-toolbar"><span>3D VIEW</span><span id="fm3dFilename">モデル未選択</span></div><div class="fm3d-toolstrip" role="toolbar" aria-label="3D編集ツール"><button type="button" data-fm3d-tool="hand" aria-pressed="false" title="視点を平行移動">✋ ハンド</button><button type="button" data-fm3d-tool="move" aria-pressed="false" title="モデルを移動">✥ 移動</button><button type="button" data-fm3d-tool="rotate" aria-pressed="false" title="モデルを回転">⟳ 回転</button><button type="button" data-fm3d-tool="camera" aria-pressed="true" class="active" title="視点を回転">◉ カメラ</button><fieldset id="fm3dAxisChoice" class="fm3d-axis-choice" hidden><legend>回転方向</legend><label><input type="radio" name="fm3dRotateAxis" value="vertical"> 縦（X）</label><label><input type="radio" name="fm3dRotateAxis" value="horizontal" checked> 横（Y）</label><label><input type="radio" name="fm3dRotateAxis" value="tilt"> 傾き（Z）</label></fieldset></div><div class="fm3d-canvas-wrap"><canvas id="fm3dCanvas" width="840" height="570"></canvas></div><div class="fm3d-note" id="fm3dNoteText">ドラッグ：視点角度を変更／右ドラッグ：視点移動／ホイール：ズーム</div></section>
+ <aside class="fm3d-options"><div class="fm3d-panel-heading"><strong>プロパティ</strong></div><div id="fm3dSelectedTools">
+ <details open><summary>モデルの位置（XYZ・微調整）</summary><div class="fm3d-sliders"><div class="fm3d-slider-row"><label for="fm3d-pos-0">X</label><input id="fm3d-pos-0" type="range" data-three-setting="pos:0" min="-5" max="5" step="0.01" value="0"><output for="fm3d-pos-0" data-three-output="pos:0">0</output></div><div class="fm3d-slider-row"><label for="fm3d-pos-1">Y</label><input id="fm3d-pos-1" type="range" data-three-setting="pos:1" min="-5" max="5" step="0.01" value="0"><output for="fm3d-pos-1" data-three-output="pos:1">0</output></div><div class="fm3d-slider-row"><label for="fm3d-pos-2">Z</label><input id="fm3d-pos-2" type="range" data-three-setting="pos:2" min="-5" max="5" step="0.01" value="0"><output for="fm3d-pos-2" data-three-output="pos:2">0</output></div></div></details>
+ <details open><summary>モデルのサイズ（一括拡大・縮小）</summary><div class="fm3d-sliders"><div class="fm3d-slider-row"><label for="fm3d-scale">倍率</label><input id="fm3d-scale" type="range" data-three-setting="scale:0" min="0.05" max="10" step="0.05" value="1"><output for="fm3d-scale" data-three-output="scale:0">1.00</output></div><div class="fm3d-scale-note">1.00＝読み込み時のサイズ／0.50＝半分／2.00＝2倍</div></div></details>
+ <details open><summary>モデルの回転（度・微調整）</summary><div class="fm3d-sliders"><div class="fm3d-slider-row"><label for="fm3d-rot-0">X</label><input id="fm3d-rot-0" type="range" data-three-setting="rot:0" min="-180" max="180" step="1" value="0"><output for="fm3d-rot-0" data-three-output="rot:0">0</output></div><div class="fm3d-slider-row"><label for="fm3d-rot-1">Y</label><input id="fm3d-rot-1" type="range" data-three-setting="rot:1" min="-180" max="180" step="1" value="0"><output for="fm3d-rot-1" data-three-output="rot:1">0</output></div><div class="fm3d-slider-row"><label for="fm3d-rot-2">Z</label><input id="fm3d-rot-2" type="range" data-three-setting="rot:2" min="-180" max="180" step="1" value="0"><output for="fm3d-rot-2" data-three-output="rot:2">0</output></div></div></details>
+ <details><summary>カメラ（下書き視点）</summary><div class="fm3d-triple"><label>水平 °<input type="number" data-three-setting="camera:0" step="5"></label><label>仰角 °<input type="number" data-three-setting="camera:1" step="5"></label><label>距離<input type="number" data-three-setting="camera:2" step="0.1" min="0.75"></label></div></details>
+ <details open><summary>ボーン <span id="fm3dBoneCount">0本のボーン</span></summary><select id="fm3dBone"><option>モデルを読み込んでください</option></select><div class="fm3d-triple"><label>X °<input type="number" data-three-bone="0" value="0" step="5"></label><label>Y °<input type="number" data-three-bone="1" value="0" step="5"></label><label>Z °<input type="number" data-three-bone="2" value="0" step="5"></label></div></details>
+ </div><label class="fm3d-check"><input type="checkbox" id="fm3dWire"> ワイヤーフレーム表示</label><button type="button" id="fm3dReset" class="fm3d-subbutton">姿勢・視点をリセット</button>
+ </aside></div><div id="fm3dStatus" class="fm3d-status" role="status"></div><footer><span>3Dモデルは編集用に保持し、2Dキャンバスへ透過画像で反映します。</span><button id="fm3dCancel">キャンセル</button><button id="fm3dCommit" disabled>レイヤーへ反映</button></footer>
+ </div></div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<script defer="" src="psd-writer.js"></script><script defer="" src="app-test.js"></script><script defer="" src="floating-tools.js"></script><script defer="" src="layer-menu.js"></script></body>
+</html>

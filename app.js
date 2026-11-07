@@ -1495,6 +1495,55 @@ function layerWorldBox(layer){
  const xs=points.map(p=>p.x),ys=points.map(p=>p.y),x=Math.min(...xs),y=Math.min(...ys),w=Math.max(...xs)-x,h=Math.max(...ys)-y;
  return {x,y,w,h};
 }
+// Selection alignment uses the existing layer transforms and keyframe system.
+// Only top-level selected roots move: selecting a folder and its child never moves it twice.
+function alignSelection(kind){
+ const roots=selectedRoots({forMotion:true}).filter(l=>!effectiveLocked(l));
+ if(roots.length<2){toast('レイヤー一覧のチェックで2個以上選択してください。');return;}
+ const entries=roots.map(l=>({layer:l,box:layerWorldBox(l)})).filter(e=>Object.values(e.box).every(Number.isFinite));
+ if(entries.length<2){toast('整列できるオブジェクトがありません。');return;}
+ const needsThree=kind.startsWith('dist')||kind.startsWith('gap');
+ if(needsThree&&entries.length<3){toast('分布・等間隔には3個以上選択してください。');return;}
+ const minX=Math.min(...entries.map(e=>e.box.x)),maxX=Math.max(...entries.map(e=>e.box.x+e.box.w));
+ const minY=Math.min(...entries.map(e=>e.box.y)),maxY=Math.max(...entries.map(e=>e.box.y+e.box.h));
+ const targets=new Map();
+ const setDelta=(entry,dx=0,dy=0)=>targets.set(entry.layer.id,{dx,dy});
+ if(['left','centerX','right','top','centerY','bottom'].includes(kind)){
+  entries.forEach(entry=>{const b=entry.box;
+   const dx=kind==='left'?minX-b.x:kind==='centerX'?(minX+maxX)/2-(b.x+b.w/2):kind==='right'?maxX-(b.x+b.w):0;
+   const dy=kind==='top'?minY-b.y:kind==='centerY'?(minY+maxY)/2-(b.y+b.h/2):kind==='bottom'?maxY-(b.y+b.h):0;
+   setDelta(entry,dx,dy);
+  });
+ }else{
+  const vertical=kind.endsWith('Y');
+  const start=vertical?'y':'x',size=vertical?'h':'w';
+  const sorted=[...entries].sort((a,b)=>a.box[start]-b.box[start]||String(a.layer.id).localeCompare(String(b.layer.id)));
+  const n=sorted.length;
+  if(kind.startsWith('gap')){
+   const available=(vertical?maxY-minY:maxX-minX)-sorted.reduce((sum,e)=>sum+e.box[size],0);
+   const gap=available/(n-1);let cursor=vertical?minY:minX;
+   sorted.forEach(e=>{const delta=cursor-e.box[start];setDelta(e,vertical?0:delta,vertical?delta:0);cursor+=e.box[size]+gap;});
+  }else{
+   const anchor=e=>kind.startsWith('distStart')?e.box[start]:kind.startsWith('distEnd')?e.box[start]+e.box[size]:e.box[start]+e.box[size]/2;
+   const first=anchor(sorted[0]),last=anchor(sorted[n-1]);
+   sorted.forEach((e,i)=>{const delta=first+(last-first)*i/(n-1)-anchor(e);setDelta(e,vertical?0:delta,vertical?delta:0);});
+  }
+ }
+ const moves=entries.map(e=>({...e,delta:targets.get(e.layer.id)})).filter(e=>e.delta&&Math.hypot(e.delta.dx,e.delta.dy)>1e-6);
+ if(!moves.length){toast('すでに整列されています。');return;}
+ snapshot();
+ for(const {layer,delta} of moves){
+  const current=getPose(layer,S.frame);
+  const key=S.autoKey||Object.hasOwn(layer.keys,String(S.frame))||S.frame===0?S.frame:(Object.keys(layer.keys).map(Number).filter(f=>f<=S.frame).sort((a,b)=>b-a)[0]??0);
+  if(!layer.keys[key])layer.keys[key]={...current};
+  const inv=matInv(getParentWorld(layer,S.frame));
+  const dx=inv[0]*delta.dx+inv[2]*delta.dy,dy=inv[1]*delta.dx+inv[3]*delta.dy;
+  layer.keys[key].x=rnd(num(layer.keys[key].x,current.x)+dx,3);
+  layer.keys[key].y=rnd(num(layer.keys[key].y,current.y)+dy,3);
+ }
+ S.smartGuideLines=[];mutated();toast('選択オブジェクトを整列しました。');
+}
+
 function smartSnapPosition(layer,original,proposed){
  S.smartGuideLines=[];
  if(!S.smartGuides||!layer||doc.layers.length>450)return proposed;
@@ -3650,7 +3699,7 @@ function initSubview(){const canvas=$('#subviewCanvas'),win=$('#subviewWindow');
  refreshSubviewUI();}
 
 document.addEventListener('input',e=>{if(e.target.id==='fmOffsetSlider'){S.offsetDistance=num(e.target.value);const box=$('#fmOffsetAmount');if(box)box.value=e.target.value;}else if(e.target.id==='fmOffsetAmount'){S.offsetDistance=clamp(num(e.target.value),-200,200);const slider=$('#fmOffsetSlider');if(slider)slider.value=S.offsetDistance;}});
-const actions={createLinkedClone, fmInsertBetweenNodes:insertNodesBetweenSelected,toggleSmartGuides:()=>{S.smartGuides=!S.smartGuides;S.smartGuideLines=[];const b=$('#fmSmartGuidesToggle');if(b){b.textContent=S.smartGuides?'吸着 ON':'吸着 OFF';b.classList.toggle('fm-snap-active',S.smartGuides);b.setAttribute('aria-pressed',String(S.smartGuides));}renderStage();},pathUnion:()=>pathfinderOperation('union'),pathSubtract:()=>pathfinderOperation('subtract'),pathIntersect:()=>pathfinderOperation('intersect'),pathDivide:()=>pathfinderOperation('divide'),offsetPath:offsetSelectedPath,create3D:()=>{void open3DLayer(false);},edit3D:()=>{void open3DLayer(true);},toggleInspector:toggleInspectorPanel,toggleTimeline:toggleTimelinePanel,togglePalette:togglePalettePanel,createRaster:createRasterLayer,unlockSelected:()=>{const l=sel();if(l?.locked){snapshot();l.locked=false;mutated();}else if(l&&lockedFolderAncestor(l)){selectLayer(lockedFolderAncestor(l).id);}},autoCorrectVertices:autoCorrectSelectedVertices,importFonts:()=>$('#fileFonts').click(),outlineText:()=>{void convertSelectedTextToPaths();},toggleSubview:()=>openSubview(!subview.open),resetGradient(){const l=sel();if(!isGradientTarget(l)||!l.gradient||effectiveLocked(l))return;snapshot();delete l.gradient;mutated();toast('グラデーションを解除しました。');},applyCrop,clearCrop,clearCropRange:()=>{S.cropSelection=null;S.cropGrow=0;renderStage();renderInspector();},addEffectKey:()=>addEffectKey(),removeEffectKey:()=>removeEffectKey(),finishPenClosed:()=>finishPen(true),finishPenOpen:()=>finishPen(false),cancelPen:()=>{S.pen=[];S.cursor=null;renderStage();},undoPenPoint:()=>{S.pen.pop();renderStage();},editPathNodes:()=>{S.nodeIndex=0;setTool('node');},pointCorner:()=>changePointType(false),pointSmooth:()=>changePointType(true),new:newProject,importAudio:()=>$('#fileAudio').click(),load:()=>$('#fileProject').click(),save:saveProject,import:()=>$('#fileAssets').click(),exportMenu:()=>$('#exportPopup').classList.toggle('hidden'),help,closeModal,exportPNG:()=>runExport('exportPNG'),exportPSD:()=>runExport('exportPSD'),exportSVG:()=>runExport('exportSVG'),exportHTML:()=>runExport('exportHTML'),exportFrames:()=>runExport('exportFrames'),exportWEBM:()=>runExport('exportWEBM'),
+const actions={alignLeft:()=>alignSelection('left'),alignCenterX:()=>alignSelection('centerX'),alignRight:()=>alignSelection('right'),alignTop:()=>alignSelection('top'),alignCenterY:()=>alignSelection('centerY'),alignBottom:()=>alignSelection('bottom'),distributeLeft:()=>alignSelection('distStartX'),distributeCenterX:()=>alignSelection('distCenterX'),distributeRight:()=>alignSelection('distEndX'),distributeTop:()=>alignSelection('distStartY'),distributeCenterY:()=>alignSelection('distCenterY'),distributeBottom:()=>alignSelection('distEndY'),distributeGapX:()=>alignSelection('gapX'),distributeGapY:()=>alignSelection('gapY'),createLinkedClone, fmInsertBetweenNodes:insertNodesBetweenSelected,toggleSmartGuides:()=>{S.smartGuides=!S.smartGuides;S.smartGuideLines=[];const b=$('#fmSmartGuidesToggle');if(b){b.textContent=S.smartGuides?'吸着 ON':'吸着 OFF';b.classList.toggle('fm-snap-active',S.smartGuides);b.setAttribute('aria-pressed',String(S.smartGuides));}renderStage();},pathUnion:()=>pathfinderOperation('union'),pathSubtract:()=>pathfinderOperation('subtract'),pathIntersect:()=>pathfinderOperation('intersect'),pathDivide:()=>pathfinderOperation('divide'),offsetPath:offsetSelectedPath,create3D:()=>{void open3DLayer(false);},edit3D:()=>{void open3DLayer(true);},toggleInspector:toggleInspectorPanel,toggleTimeline:toggleTimelinePanel,togglePalette:togglePalettePanel,createRaster:createRasterLayer,unlockSelected:()=>{const l=sel();if(l?.locked){snapshot();l.locked=false;mutated();}else if(l&&lockedFolderAncestor(l)){selectLayer(lockedFolderAncestor(l).id);}},autoCorrectVertices:autoCorrectSelectedVertices,importFonts:()=>$('#fileFonts').click(),outlineText:()=>{void convertSelectedTextToPaths();},toggleSubview:()=>openSubview(!subview.open),resetGradient(){const l=sel();if(!isGradientTarget(l)||!l.gradient||effectiveLocked(l))return;snapshot();delete l.gradient;mutated();toast('グラデーションを解除しました。');},applyCrop,clearCrop,clearCropRange:()=>{S.cropSelection=null;S.cropGrow=0;renderStage();renderInspector();},addEffectKey:()=>addEffectKey(),removeEffectKey:()=>removeEffectKey(),finishPenClosed:()=>finishPen(true),finishPenOpen:()=>finishPen(false),cancelPen:()=>{S.pen=[];S.cursor=null;renderStage();},undoPenPoint:()=>{S.pen.pop();renderStage();},editPathNodes:()=>{S.nodeIndex=0;setTool('node');},pointCorner:()=>changePointType(false),pointSmooth:()=>changePointType(true),new:newProject,importAudio:()=>$('#fileAudio').click(),load:()=>$('#fileProject').click(),save:saveProject,import:()=>$('#fileAssets').click(),exportMenu:()=>$('#exportPopup').classList.toggle('hidden'),help,closeModal,exportPNG:()=>runExport('exportPNG'),exportPSD:()=>runExport('exportPSD'),exportSVG:()=>runExport('exportSVG'),exportHTML:()=>runExport('exportHTML'),exportFrames:()=>runExport('exportFrames'),exportWEBM:()=>runExport('exportWEBM'),
  morphTool:()=>{const l=sel();if(!l)return;if(l.shape.type!=='path'){toast('先に「パスに変換」を選んでください。');return;}setTool('node');},
  meshTool:()=>{const l=sel();if(!l||l.locked)return;if(!l.mesh){snapshot();initMesh(l,+$('#meshDivisions')?.value||2);mutated();}setTool('mesh');},
  convertPath:()=>{const l=sel();if(!l||l.locked)return;snapshot();if(convertToPath(l)){mutated();setTool('node');}else toast('この素材の輪郭は直接パス変換できません。メッシュをご利用ください。');},

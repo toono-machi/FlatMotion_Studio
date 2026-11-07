@@ -1134,3 +1134,17 @@ button{transition:background .16s ease, color .16s ease, border-color .16s ease,
 .fm-outline-placement-choices {display:flex;gap:6px;flex-wrap:wrap;}
 .fm-outline-placement-choices label {display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:6px 9px;border:1px solid #d7c7b3;border-radius:8px;cursor:pointer;background:#fffaf3;white-space:nowrap;}
 .fm-outline-placement-choices input {accent-color:#61783a;}
+
+/* Center the standalone sparkle within the decorative dashed circle. */
+.empty-illustration img{display:block;width:34px!important;height:34px!important;object-fit:contain!important;transform:none!important;}
+
+/* Selectable-object align and distribute toolbar (layer palette > ≡). */
+.fm-align-panel{padding:10px 12px 13px!important}
+.fm-align-hint{font-size:10px;line-height:1.5;color:#8c7665;margin-bottom:9px}
+.fm-align-label{font-size:11px;font-weight:700;color:#6a503f;margin:9px 0 4px}
+.fm-align-buttons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+.fm-align-buttons.fm-align-two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.fm-align-buttons button{display:flex;align-items:center;justify-content:center;min-width:0;height:30px;border:1px solid #d9c9b7;border-radius:5px;background:#fffaf2;color:#655345;padding:3px;cursor:pointer}
+.fm-align-buttons button:hover{background:#f1e2cf;border-color:#a88a6c}
+.fm-align-buttons button:active{background:#d9e3c8}
+.fm-align-buttons svg{pointer-events:none;flex:none}
