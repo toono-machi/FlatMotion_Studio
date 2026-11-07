@@ -10,9 +10,20 @@ function loadEngine(){return enginePromise ||= Promise.all([
 ]).then(([THREE,obj,fbx,gltf,transform])=>({THREE,OBJLoader:obj.OBJLoader,FBXLoader:fbx.FBXLoader,GLTFLoader:gltf.GLTFLoader,TransformControls:transform.TransformControls})).catch(e=>{enginePromise=null;throw e;});}
 const $=s=>document.querySelector(s),rad=d=>d*Math.PI/180;
 const defaultTransform=()=>({pos:[0,0,0],rot:[0,0,0],scale:1,bones:{},wire:false});
-const defaultScene=()=>({camera:[0,12,2.7],wire:false,ground:true,perspectiveGrid:false,background:'#f7f0e6',lightPosition:[1.2,1.6,.6],lightHandle:false,lightIntensity:2.4});
+const defaultScene=()=>({camera:[0,12,2.7],perspectiveStrength:50,wire:false,ground:true,perspectiveGrid:false,background:'#f7f0e6',lightPosition:[1.2,1.6,.6],lightHandle:false,lightIntensity:2.4});
 const FLOOR_Y=-.92;
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+// Perspective strength: 0 is almost parallel projection, 50 is the former 60° camera,
+// and 100 is a dramatic wide angle. Compensate camera distance to preserve target scale.
+function perspectiveFov(value){
+ const v=clamp(Number(value)||0,0,100);
+ return v<=50?3+(60-3)*v/50:60+(100-60)*(v-50)/50;
+}
+function perspectiveDistance(s){
+ const fov=perspectiveFov(s.perspectiveStrength);
+ return Math.max(.01,s.cameraSettings[2])*Math.tan(rad(30))/Math.tan(rad(fov/2));
+}
+
 const TOOL_NAMES={hand:'ハンド',move:'移動',rotate:'回転',camera:'カメラ'};
 let session=null, serial=0;
 function report(t){const e=$('#fm3dStatus');if(e)e.textContent=t;}
@@ -66,7 +77,7 @@ function initCanvas(s){
  lightHandle.position.copy(light.position);scene.add(lightHandle);
  // The workspace uses a perspective camera so ground grid lines convey depth.
  // 60 degrees roughly matches the previous orthographic framing at distance 2.7.
- const camera=new THREE.PerspectiveCamera(60,840/570,.01,500);
+ const camera=new THREE.PerspectiveCamera(perspectiveFov(s.perspectiveStrength),840/570,.01,2000);
  const ground=new THREE.Group();ground.name='FM3D_EDITOR_GUIDES';
  const surface=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshBasicMaterial({color:0xc3b19a,transparent:true,opacity:.17,depthWrite:false,side:THREE.DoubleSide}));
  surface.rotation.x=-Math.PI/2;surface.position.y=-.92;surface.renderOrder=-2;ground.add(surface);
@@ -181,7 +192,8 @@ function draw(s){if(!s?.renderer)return;
  s.light.position.fromArray(s.lightPosition);s.light.intensity=s.lightIntensity;s.lightHandle.position.copy(s.light.position);
  s.lightHandle.visible=false;
  s.renderer.setClearColor(s.backgroundColor,1);
- const yaw=rad(s.cameraSettings[0]),pitch=rad(s.cameraSettings[1]),distance=s.cameraSettings[2];
+ const yaw=rad(s.cameraSettings[0]),pitch=rad(s.cameraSettings[1]),distance=perspectiveDistance(s);
+ s.camera.fov=perspectiveFov(s.perspectiveStrength);
  s.camera.position.set(distance*Math.sin(yaw)*Math.cos(pitch),distance*Math.sin(pitch),distance*Math.cos(yaw)*Math.cos(pitch)).add(s.cameraTarget);s.camera.lookAt(s.cameraTarget);
  const aspect=Math.max(1,s.renderer.domElement.width)/Math.max(1,s.renderer.domElement.height);
  s.camera.aspect=aspect;s.camera.updateProjectionMatrix();s.camera.updateMatrixWorld();
@@ -230,6 +242,8 @@ function syncInputs(s){if(!s)return;const obj=selected(s);
  $('#fm3dWire').checked=!!s.wire;
  $('#fm3dGround').checked=!!s.groundEnabled;
  $('#fm3dPerspectiveGrid').checked=!!s.perspectiveGridEnabled;
+ $('#fm3dPerspectiveStrength').value=String(s.perspectiveStrength);
+ $('#fm3dPerspectiveStrengthValue').textContent=String(Math.round(s.perspectiveStrength))+'%';
  $('#fm3dBackground').value=s.backgroundColor;
  $('#fm3dLightIntensity').value=String(s.lightIntensity);$('#fm3dLightIntensityValue').textContent=s.lightIntensity.toFixed(2);drawLightSphere(s);
  const coordinates=$('#fm3dLightPosition');if(coordinates)coordinates.textContent=s.lightPosition.map(v=>Number(v).toFixed(2)).join(' / ');
@@ -247,7 +261,7 @@ async function open({layer=null,onSave,documentWidth,documentHeight}){
  show();report('3Dエンジンを準備中…');$('#fm3dCommit').disabled=true;
  try{
   const {THREE,...loaders}=await loadEngine();if(session)session.renderer?.dispose();
-  const saved=layer?.shape?.threeD||{};const s={THREE,loaders,layer,onSave,documentWidth,documentHeight,items:[],selectedId:null,cameraSettings:[...(saved.camera||saved.settings?.camera||defaultScene().camera)],wire:!!(saved.wire||saved.settings?.wire),tool:'camera',rotationAxis:'horizontal',cameraTarget:new THREE.Vector3(...(saved.cameraTarget||[0,0,0])),groundEnabled:saved.ground!==false,perspectiveGridEnabled:!!saved.perspectiveGrid,backgroundColor:/^#[0-9a-f]{6}$/i.test(saved.background||'')?saved.background:'#f7f0e6',lightPosition:Array.isArray(saved.lightPosition)&&saved.lightPosition.length===3&&saved.lightPosition.every(Number.isFinite)?[...saved.lightPosition]:[1.2,1.6,.6],lightHandleEnabled:false,lightIntensity:Number.isFinite(saved.lightIntensity)?clamp(saved.lightIntensity,0,5):2.4,transformDragging:false};
+  const saved=layer?.shape?.threeD||{};const s={THREE,loaders,layer,onSave,documentWidth,documentHeight,items:[],selectedId:null,cameraSettings:[...(saved.camera||saved.settings?.camera||defaultScene().camera)],wire:!!(saved.wire||saved.settings?.wire),tool:'camera',rotationAxis:'horizontal',cameraTarget:new THREE.Vector3(...(saved.cameraTarget||[0,0,0])),groundEnabled:saved.ground!==false,perspectiveGridEnabled:!!saved.perspectiveGrid,perspectiveStrength:Number.isFinite(Number(saved.perspectiveStrength))?clamp(Number(saved.perspectiveStrength),0,100):50,backgroundColor:/^#[0-9a-f]{6}$/i.test(saved.background||'')?saved.background:'#f7f0e6',lightPosition:Array.isArray(saved.lightPosition)&&saved.lightPosition.length===3&&saved.lightPosition.every(Number.isFinite)?[...saved.lightPosition]:[1.2,1.6,.6],lightHandleEnabled:false,lightIntensity:Number.isFinite(saved.lightIntensity)?clamp(saved.lightIntensity,0,5):2.4,transformDragging:false};
   session=s;initCanvas(s);
   const old=saved.source?[{source:saved.source,filename:saved.filename,format:saved.format,settings:saved.settings}]:[];
   const metas=Array.isArray(saved.models)?saved.models:old;
@@ -274,7 +288,7 @@ async function commit(){const s=session;if(!s?.items.length)return;$('#fm3dCommi
  s.renderer.setClearColor(0x000000,0);
  s.renderer.render(s.scene,s.camera);
  const data=s.renderer.domElement.toDataURL('image/png');const models=s.items.map(({source,format,filename,settings,visible})=>({source,format,filename,settings,visible}));
- const first=models[0];s.onSave({data,threeD:{models,camera:[...s.cameraSettings],wire:s.wire,ground:s.groundEnabled,perspectiveGrid:s.perspectiveGridEnabled,background:s.backgroundColor,lightPosition:[...s.lightPosition],lightHandle:false,lightIntensity:s.lightIntensity,cameraTarget:s.cameraTarget.toArray(),filename:models.length===1?first.filename:`${models.length}モデル`,format:'multi'},width:Math.min(s.documentWidth,s.documentHeight*s.renderer.domElement.width/s.renderer.domElement.height,1600),height:Math.min(s.documentWidth*s.renderer.domElement.height/s.renderer.domElement.width,s.documentHeight,1600*s.renderer.domElement.height/s.renderer.domElement.width)});hide();
+ const first=models[0];s.onSave({data,threeD:{models,camera:[...s.cameraSettings],wire:s.wire,ground:s.groundEnabled,perspectiveGrid:s.perspectiveGridEnabled,perspectiveStrength:s.perspectiveStrength,background:s.backgroundColor,lightPosition:[...s.lightPosition],lightHandle:false,lightIntensity:s.lightIntensity,cameraTarget:s.cameraTarget.toArray(),filename:models.length===1?first.filename:`${models.length}モデル`,format:'multi'},width:Math.min(s.documentWidth,s.documentHeight*s.renderer.domElement.width/s.renderer.domElement.height,1600),height:Math.min(s.documentWidth*s.renderer.domElement.height/s.renderer.domElement.width,s.documentHeight,1600*s.renderer.domElement.height/s.renderer.domElement.width)});hide();
  }catch(e){report('反映できません：'+readableError(e));}finally{if(session===s){updateTransform(s);draw(s);}$('#fm3dCommit').disabled=false;}}
 $('#fm3dClose').addEventListener('click',hide);$('#fm3dCancel').addEventListener('click',hide);
 $('#fm3dFile').addEventListener('change',e=>{void fileChanged([...e.target.files]);e.target.value='';});
@@ -332,6 +346,7 @@ $('#fm3dModal').addEventListener('input',e=>{const s=session;if(!s)return;const 
  else if(el.id==='fm3dWire'){s.wire=el.checked;draw(s);}
  else if(el.id==='fm3dGround'){s.groundEnabled=el.checked;draw(s);}
  else if(el.id==='fm3dPerspectiveGrid'){s.perspectiveGridEnabled=el.checked;draw(s);}
+ else if(el.id==='fm3dPerspectiveStrength'){s.perspectiveStrength=clamp(+el.value,0,100);$('#fm3dPerspectiveStrengthValue').textContent=Math.round(s.perspectiveStrength)+'%';draw(s);}
  else if(el.id==='fm3dBackground'){s.backgroundColor=el.value;draw(s);}
  else if(el.id==='fm3dLightIntensity'){s.lightIntensity=clamp(+el.value,0,5);$('#fm3dLightIntensityValue').textContent=s.lightIntensity.toFixed(2);drawLightSphere(s);draw(s);}
 });

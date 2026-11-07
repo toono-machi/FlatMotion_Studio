@@ -197,6 +197,7 @@
  </div><div class="fm3d-view-settings" role="group" aria-label="3D表示補助">
 <label class="fm3d-check"><input type="checkbox" id="fm3dGround" checked> 地面を表示</label>
 <label class="fm3d-check"><input type="checkbox" id="fm3dPerspectiveGrid"> パースグリッドを表示</label>
+<div class="fm3d-settings-section"><strong>パースの強さ</strong><div class="fm3d-light-strength"><label for="fm3dPerspectiveStrength">弱い</label><input id="fm3dPerspectiveStrength" type="range" min="0" max="100" step="1" value="50" aria-label="パースの強さ"><output id="fm3dPerspectiveStrengthValue" for="fm3dPerspectiveStrength">50%</output></div><span class="fm3d-guide-note">0%＝ほぼ平行投影／50%＝標準／100%＝強い遠近感。モデルの画面上の大きさをほぼ維持して調整します。</span></div>
 <div class="fm3d-settings-section"><strong>接地</strong><button type="button" id="fm3dGroundSelected" class="fm3d-subbutton">選択モデルを地面に接地</button><span class="fm3d-guide-note">現在の姿勢・回転・倍率で、最下点を地面に合わせます。</span></div>
 <div class="fm3d-settings-section fm3d-light-panel"><strong>光源</strong>
 <div class="fm3d-light-editor"><canvas id="fm3dLightSphere" width="156" height="156" role="img" aria-label="ドラッグして光の方向を調整"></canvas><span class="fm3d-guide-note">球をドラッグして光が当たる方向を調整</span></div>
