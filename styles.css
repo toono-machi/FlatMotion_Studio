@@ -1148,3 +1148,9 @@ button{transition:background .16s ease, color .16s ease, border-color .16s ease,
 .fm-align-buttons button:hover{background:#f1e2cf;border-color:#a88a6c}
 .fm-align-buttons button:active{background:#d9e3c8}
 .fm-align-buttons svg{pointer-events:none;flex:none}
+
+/* 3D workspace ground and perspective guides */
+.fm3d-view-settings{display:flex;flex-direction:column;gap:9px;padding:11px 12px;border:1px solid #d9c6b0;border-radius:9px;background:#fffcf5}
+.fm3d-view-settings .fm3d-check{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
+.fm3d-view-settings input[type="checkbox"]{accent-color:#627d42;width:16px;height:16px;margin:0}
+.fm3d-guide-note{font-size:11px;line-height:1.55;color:#816b5c;margin:0}
