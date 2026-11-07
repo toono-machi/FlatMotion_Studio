@@ -197,6 +197,9 @@
  </div><div class="fm3d-view-settings" role="group" aria-label="3D表示補助">
 <label class="fm3d-check"><input type="checkbox" id="fm3dGround" checked> 地面を表示</label>
 <label class="fm3d-check"><input type="checkbox" id="fm3dPerspectiveGrid"> パースグリッドを表示</label>
+<div class="fm3d-settings-section"><strong>接地</strong><button type="button" id="fm3dGroundSelected" class="fm3d-subbutton">選択モデルを地面に接地</button><span class="fm3d-guide-note">現在の姿勢・回転・倍率で、最下点を地面に合わせます。</span></div>
+<div class="fm3d-settings-section"><strong>光源</strong><label class="fm3d-check"><input type="checkbox" id="fm3dLightHandle" checked> 光源ハンドルを表示</label><div class="fm3d-guide-note">3D画面の黄色い光源マークをドラッグして光の方向を変更できます。</div><div class="fm3d-guide-note">光源位置（X / Y / Z）：<output id="fm3dLightPosition">1.2 / 1.6 / 0.6</output></div><button type="button" id="fm3dLightReset" class="fm3d-subbutton">光源位置を初期化</button></div>
+<div class="fm3d-settings-section"><label class="fm3d-bg-label" for="fm3dBackground"><strong>3D画面の背景色</strong><input type="color" id="fm3dBackground" value="#f7f0e6"></label><span class="fm3d-guide-note">背景色と光源ハンドルは2Dレイヤーに書き出しません。</span></div>
 <p class="fm3d-guide-note">地面は水平（XZ面）です。グリッドは視点に応じて奥行きが変化します。どちらもレイヤー画像には書き出されません。</p>
 </div><label class="fm3d-check"><input type="checkbox" id="fm3dWire"> ワイヤーフレーム表示</label><button type="button" id="fm3dReset" class="fm3d-subbutton">姿勢・視点をリセット</button>
  </aside></div><div id="fm3dStatus" class="fm3d-status" role="status"></div><footer><span>3Dモデルは編集用に保持し、2Dキャンバスへ透過画像で反映します。</span><button id="fm3dCancel">キャンセル</button><button id="fm3dCommit" disabled>レイヤーへ反映</button></footer>

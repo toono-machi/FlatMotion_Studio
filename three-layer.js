@@ -10,7 +10,9 @@ function loadEngine(){return enginePromise ||= Promise.all([
 ]).then(([THREE,obj,fbx,gltf,transform])=>({THREE,OBJLoader:obj.OBJLoader,FBXLoader:fbx.FBXLoader,GLTFLoader:gltf.GLTFLoader,TransformControls:transform.TransformControls})).catch(e=>{enginePromise=null;throw e;});}
 const $=s=>document.querySelector(s),rad=d=>d*Math.PI/180;
 const defaultTransform=()=>({pos:[0,0,0],rot:[0,0,0],scale:1,bones:{},wire:false});
-const defaultScene=()=>({camera:[0,12,2.7],wire:false,ground:true,perspectiveGrid:false});
+const defaultScene=()=>({camera:[0,12,2.7],wire:false,ground:true,perspectiveGrid:false,background:'#f7f0e6',lightPosition:[1.2,1.6,.6],lightHandle:true});
+const FLOOR_Y=-.92;
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 const TOOL_NAMES={hand:'ハンド',move:'移動',rotate:'回転',camera:'カメラ'};
 let session=null, serial=0;
 function report(t){const e=$('#fm3dStatus');if(e)e.textContent=t;}
@@ -55,7 +57,13 @@ function initCanvas(s){
  const {THREE}=s,canvas=$('#fm3dCanvas');canvas.width=840;canvas.height=570;
  const renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,preserveDrawingBuffer:true});renderer.setPixelRatio(1);renderer.setSize(840,570,false);renderer.outputColorSpace=THREE.SRGBColorSpace;
  const scene=new THREE.Scene(),root=new THREE.Group();scene.add(root);scene.add(new THREE.HemisphereLight(0xffffff,0x98847a,2.35));
- const light=new THREE.DirectionalLight(0xffffff,2.4);light.position.set(4,8,5);scene.add(light);
+ const light=new THREE.DirectionalLight(0xffffff,2.4);
+ light.position.fromArray(s.lightPosition);light.target.position.set(0,0,0);scene.add(light,light.target);
+ const lightHandle=new THREE.Group();lightHandle.name='FM3D_LIGHT_GIZMO';
+ const bulb=new THREE.Mesh(new THREE.SphereGeometry(.13,20,12),new THREE.MeshBasicMaterial({color:0xffd47e,depthTest:false}));bulb.renderOrder=90;lightHandle.add(bulb);
+ const ring=new THREE.Mesh(new THREE.TorusGeometry(.19,.025,8,36),new THREE.MeshBasicMaterial({color:0xb78b48,depthTest:false}));ring.renderOrder=90;lightHandle.add(ring);
+ const shaft=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0),new THREE.Vector3(0,-.5,0)]),new THREE.LineBasicMaterial({color:0xd3aa5a,depthTest:false}));shaft.renderOrder=90;lightHandle.add(shaft);
+ lightHandle.position.copy(light.position);scene.add(lightHandle);
  // The workspace uses a perspective camera so ground grid lines convey depth.
  // 60 degrees roughly matches the previous orthographic framing at distance 2.7.
  const camera=new THREE.PerspectiveCamera(60,840/570,.01,500);
@@ -67,7 +75,7 @@ function initCanvas(s){
  const perspectiveGrid=new THREE.GridHelper(40,80,0x788c65,0xb4b8a0);perspectiveGrid.position.y=-.91;
  perspectiveGrid.material.transparent=true;perspectiveGrid.material.opacity=.45;perspectiveGrid.material.depthWrite=false;ground.add(perspectiveGrid);
  scene.add(ground);
- Object.assign(s,{renderer,scene,root,camera,ground,surface,coarseGrid,perspectiveGrid});
+ Object.assign(s,{renderer,scene,root,camera,ground,surface,coarseGrid,perspectiveGrid,light,lightHandle});
  const transform=new s.loaders.TransformControls(camera,canvas);
  transform.setSize(.82);
  scene.add(transform.getHelper());
@@ -82,6 +90,21 @@ function initCanvas(s){
  canvas.oncontextmenu=e=>e.preventDefault();
  canvas.onpointerdown=e=>{
   if(e.button!==0&&e.button!==2||s.transformDragging)return;
+  // Pick the light marker before any model gizmo or navigation action.
+  if(e.button===0&&s.lightHandleEnabled){
+   const r=canvas.getBoundingClientRect();
+   const p=new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height*2-1));
+   const ray=new THREE.Raycaster();ray.setFromCamera(p,s.camera);
+   ray.params.Line.threshold=.1;
+   const marker=s.lightHandle.children[0];
+   const hits=ray.intersectObject(marker,false);
+   if(hits.length){
+    e.preventDefault();e.stopImmediatePropagation();canvas.setPointerCapture(e.pointerId);
+    s.camera.getWorldDirection(s.lightDragNormal=new THREE.Vector3());
+    s.drag={id:e.pointerId,mode:'light',x:e.clientX,y:e.clientY,moved:false};
+    updateCursor(s);return;
+   }
+  }
   // TransformControls listens directly to the canvas. Its gizmo captures move/rotate drags.
   if(e.button===0&&(s.tool==='move'||s.tool==='rotate')&&transform.axis)return;
   e.preventDefault();canvas.setPointerCapture(e.pointerId);
@@ -94,7 +117,16 @@ function initCanvas(s){
   const d=s.drag;if(!d||e.pointerId!==d.id||s.transformDragging)return;
   const dx=e.clientX-d.x,dy=e.clientY-d.y;if(Math.hypot(dx,dy)>3)d.moved=true;
   const rect=canvas.getBoundingClientRect();
-  if(d.mode==='hand'){
+  if(d.mode==='light'){
+   const p=new THREE.Vector2((e.clientX-rect.left)/rect.width*2-1,-((e.clientY-rect.top)/rect.height*2-1));
+   const ray=new THREE.Raycaster();ray.setFromCamera(p,s.camera);
+   const plane=new THREE.Plane().setFromNormalAndCoplanarPoint(s.lightDragNormal,s.light.position);
+   const target=new THREE.Vector3();
+   if(ray.ray.intersectPlane(plane,target)){
+    target.set(clamp(target.x,-25,25),clamp(target.y,-20,25),clamp(target.z,-25,25));
+    s.lightPosition=target.toArray();
+   }
+  }else if(d.mode==='hand'){
    const scale=s.cameraSettings[2]*1.2/Math.max(1,rect.height);
    const right=new THREE.Vector3().setFromMatrixColumn(s.camera.matrixWorld,0);
    const up=new THREE.Vector3().setFromMatrixColumn(s.camera.matrixWorld,1);
@@ -146,6 +178,9 @@ function draw(s){if(!s?.renderer)return;
  for(const item of s.items){item.group.visible=item.visible;item.group.position.set(...item.settings.pos);item.group.rotation.set(...item.settings.rot.map(rad));item.group.scale.setScalar(Math.max(0.01,Number(item.settings.scale)||1));
   item.model.traverse(m=>{if(!m.isMesh||!m.material)return;for(const mat of Array.isArray(m.material)?m.material:[m.material]){if(mat)mat.wireframe=!!(s.wire||item.settings.wire);}});
  }
+ s.light.position.fromArray(s.lightPosition);s.lightHandle.position.copy(s.light.position);
+ s.lightHandle.visible=!!s.lightHandleEnabled;
+ s.renderer.setClearColor(s.backgroundColor,1);
  const yaw=rad(s.cameraSettings[0]),pitch=rad(s.cameraSettings[1]),distance=s.cameraSettings[2];
  s.camera.position.set(distance*Math.sin(yaw)*Math.cos(pitch),distance*Math.sin(pitch),distance*Math.cos(yaw)*Math.cos(pitch)).add(s.cameraTarget);s.camera.lookAt(s.cameraTarget);
  const aspect=Math.max(1,s.renderer.domElement.width)/Math.max(1,s.renderer.domElement.height);
@@ -155,6 +190,17 @@ function draw(s){if(!s?.renderer)return;
  s.coarseGrid.visible=!!s.groundEnabled&&!s.perspectiveGridEnabled;
  s.perspectiveGrid.visible=!!s.perspectiveGridEnabled;
  s.renderer.render(s.scene,s.camera);
+}
+function putSelectedOnGround(s){
+ const item=selected(s);if(!item){report('接地するモデルを選択してください。');return;}
+ // Draw updates the group from the settings so the bounds include scale, rotation and bones.
+ draw(s);item.group.updateWorldMatrix(true,true);
+ const bounds=new s.THREE.Box3().setFromObject(item.group,true);
+ if(bounds.isEmpty()||!Number.isFinite(bounds.min.y)){report('接地位置を計算できません。');return;}
+ const shift=FLOOR_Y-bounds.min.y;
+ item.settings.pos[1]=Math.round((item.settings.pos[1]+shift)*10000)/10000;
+ syncInputs(s);draw(s);
+ report('「'+item.filename+'」を地面に接地しました。');
 }
 function renderItems(s){
  const list=$('#fm3dObjects');list.innerHTML=s.items.map((item,i)=>`<div class="fm3d-object-row ${item.id===s.selectedId?'selected':''}" data-3d-id="${item.id}">
@@ -184,6 +230,9 @@ function syncInputs(s){if(!s)return;const obj=selected(s);
  $('#fm3dWire').checked=!!s.wire;
  $('#fm3dGround').checked=!!s.groundEnabled;
  $('#fm3dPerspectiveGrid').checked=!!s.perspectiveGridEnabled;
+ $('#fm3dBackground').value=s.backgroundColor;
+ $('#fm3dLightHandle').checked=!!s.lightHandleEnabled;
+ const coordinates=$('#fm3dLightPosition');if(coordinates)coordinates.textContent=s.lightPosition.map(v=>Number(v).toFixed(2)).join(' / ');
  const n=$('#fm3dBone').value;if(n!==''){const a=obj?.settings.bones[n]||[0,0,0];document.querySelectorAll('[data-three-bone]').forEach(el=>el.value=a[+el.dataset.threeBone]||0);}
 }
 function selectItem(s,id){s.selectedId=id;renderItems(s);syncInputs(s);draw(s);}
@@ -198,7 +247,7 @@ async function open({layer=null,onSave,documentWidth,documentHeight}){
  show();report('3Dエンジンを準備中…');$('#fm3dCommit').disabled=true;
  try{
   const {THREE,...loaders}=await loadEngine();if(session)session.renderer?.dispose();
-  const saved=layer?.shape?.threeD||{};const s={THREE,loaders,layer,onSave,documentWidth,documentHeight,items:[],selectedId:null,cameraSettings:[...(saved.camera||saved.settings?.camera||defaultScene().camera)],wire:!!(saved.wire||saved.settings?.wire),tool:'camera',rotationAxis:'horizontal',cameraTarget:new THREE.Vector3(...(saved.cameraTarget||[0,0,0])),groundEnabled:saved.ground!==false,perspectiveGridEnabled:!!saved.perspectiveGrid,transformDragging:false};
+  const saved=layer?.shape?.threeD||{};const s={THREE,loaders,layer,onSave,documentWidth,documentHeight,items:[],selectedId:null,cameraSettings:[...(saved.camera||saved.settings?.camera||defaultScene().camera)],wire:!!(saved.wire||saved.settings?.wire),tool:'camera',rotationAxis:'horizontal',cameraTarget:new THREE.Vector3(...(saved.cameraTarget||[0,0,0])),groundEnabled:saved.ground!==false,perspectiveGridEnabled:!!saved.perspectiveGrid,backgroundColor:/^#[0-9a-f]{6}$/i.test(saved.background||'')?saved.background:'#f7f0e6',lightPosition:Array.isArray(saved.lightPosition)&&saved.lightPosition.length===3&&saved.lightPosition.every(Number.isFinite)?[...saved.lightPosition]:[1.2,1.6,.6],lightHandleEnabled:saved.lightHandle!==false,transformDragging:false};
   session=s;initCanvas(s);
   const old=saved.source?[{source:saved.source,filename:saved.filename,format:saved.format,settings:saved.settings}]:[];
   const metas=Array.isArray(saved.models)?saved.models:old;
@@ -220,9 +269,12 @@ function applyBone(s){const item=selected(s),n=$('#fm3dBone').value;if(!item||n=
 async function commit(){const s=session;if(!s?.items.length)return;$('#fm3dCommit').disabled=true;report('合成画像を生成中…');try{
  draw(s);s.transform.getHelper().visible=false;
  // Guides belong to the editor only; never bake the floor/grid into the 2D layer.
- s.ground.visible=false;s.renderer.render(s.scene,s.camera);
+ s.ground.visible=false;s.lightHandle.visible=false;
+ // Background is editor-only: keep the saved 2D layer transparent.
+ s.renderer.setClearColor(0x000000,0);
+ s.renderer.render(s.scene,s.camera);
  const data=s.renderer.domElement.toDataURL('image/png');const models=s.items.map(({source,format,filename,settings,visible})=>({source,format,filename,settings,visible}));
- const first=models[0];s.onSave({data,threeD:{models,camera:[...s.cameraSettings],wire:s.wire,ground:s.groundEnabled,perspectiveGrid:s.perspectiveGridEnabled,cameraTarget:s.cameraTarget.toArray(),filename:models.length===1?first.filename:`${models.length}モデル`,format:'multi'},width:Math.min(s.documentWidth,s.documentHeight*s.renderer.domElement.width/s.renderer.domElement.height,1600),height:Math.min(s.documentWidth*s.renderer.domElement.height/s.renderer.domElement.width,s.documentHeight,1600*s.renderer.domElement.height/s.renderer.domElement.width)});hide();
+ const first=models[0];s.onSave({data,threeD:{models,camera:[...s.cameraSettings],wire:s.wire,ground:s.groundEnabled,perspectiveGrid:s.perspectiveGridEnabled,background:s.backgroundColor,lightPosition:[...s.lightPosition],lightHandle:s.lightHandleEnabled,cameraTarget:s.cameraTarget.toArray(),filename:models.length===1?first.filename:`${models.length}モデル`,format:'multi'},width:Math.min(s.documentWidth,s.documentHeight*s.renderer.domElement.width/s.renderer.domElement.height,1600),height:Math.min(s.documentWidth*s.renderer.domElement.height/s.renderer.domElement.width,s.documentHeight,1600*s.renderer.domElement.height/s.renderer.domElement.width)});hide();
  }catch(e){report('反映できません：'+readableError(e));}finally{if(session===s){updateTransform(s);draw(s);}$('#fm3dCommit').disabled=false;}}
 $('#fm3dClose').addEventListener('click',hide);$('#fm3dCancel').addEventListener('click',hide);
 $('#fm3dFile').addEventListener('change',e=>{void fileChanged([...e.target.files]);e.target.value='';});
@@ -234,6 +286,8 @@ $('#fm3dObjects').addEventListener('click',e=>{const button=e.target.closest('[d
  else if(action==='delete'){s.root.remove(item.group);s.items.splice(index,1);if(s.selectedId===id)s.selectedId=s.items[Math.min(index,s.items.length-1)]?.id||null;renderItems(s);syncInputs(s);draw(s);}
  else if(action==='up'||action==='down'){const j=index+(action==='up'?-1:1);if(j<0||j>=s.items.length)return;[s.items[index],s.items[j]]=[s.items[j],s.items[index]];renderItems(s);}
 });
+$('#fm3dGroundSelected').addEventListener('click',()=>{if(session)putSelectedOnGround(session);});
+$('#fm3dLightReset').addEventListener('click',()=>{if(!session)return;session.lightPosition=[1.2,1.6,.6];syncInputs(session);draw(session);});
 $('#fm3dReset').addEventListener('click',()=>{const s=session;if(!s)return;const item=selected(s);if(item){item.settings=defaultTransform();item.bones.forEach((b,i)=>b.rotation.copy(item.restBones[i]));}else{s.cameraSettings=[...defaultScene().camera];s.cameraTarget.set(0,0,0);}renderBones(s);syncInputs(s);draw(s);});
 $('#fm3dModal').addEventListener('input',e=>{const s=session;if(!s)return;const el=e.target,item=selected(s);
  if(el.matches('[data-three-setting]')){const [key,i]=el.dataset.threeSetting.split(':');if(key==='camera')s.cameraSettings[+i]=+el.value;else if(item){if(key==='scale')item.settings.scale=+el.value;else item.settings[key][+i]=+el.value;}syncInputs(s);draw(s);}
@@ -241,6 +295,8 @@ $('#fm3dModal').addEventListener('input',e=>{const s=session;if(!s)return;const 
  else if(el.id==='fm3dWire'){s.wire=el.checked;draw(s);}
  else if(el.id==='fm3dGround'){s.groundEnabled=el.checked;draw(s);}
  else if(el.id==='fm3dPerspectiveGrid'){s.perspectiveGridEnabled=el.checked;draw(s);}
+ else if(el.id==='fm3dBackground'){s.backgroundColor=el.value;draw(s);}
+ else if(el.id==='fm3dLightHandle'){s.lightHandleEnabled=el.checked;draw(s);}
 });
 $('#fm3dBone').addEventListener('change',()=>syncInputs(session));
 document.querySelectorAll('[data-fm3d-tool]').forEach(b=>b.addEventListener('click',()=>{if(!session)return;session.tool=b.dataset.fm3dTool;updateTransform(session);draw(session);}));

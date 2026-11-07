@@ -1154,3 +1154,11 @@ button{transition:background .16s ease, color .16s ease, border-color .16s ease,
 .fm3d-view-settings .fm3d-check{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
 .fm3d-view-settings input[type="checkbox"]{accent-color:#627d42;width:16px;height:16px;margin:0}
 .fm3d-guide-note{font-size:11px;line-height:1.55;color:#816b5c;margin:0}
+
+/* 3D Ground placement / lighting / viewport appearance */
+.fm3d-settings-section{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:10px 0;border-top:1px solid #e5d5c5}
+.fm3d-settings-section>strong,.fm3d-bg-label strong{font-size:12px;color:#594537}
+.fm3d-settings-section .fm3d-subbutton{font-size:12px;padding:8px;min-height:32px}
+.fm3d-bg-label{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.fm3d-bg-label input[type=color]{width:58px;height:30px;border:1px solid #cab6a0;border-radius:6px;padding:2px;background:#fffaf3;cursor:pointer}
+#fm3dLightPosition{font-variant-numeric:tabular-nums}
