@@ -198,7 +198,10 @@
 <label class="fm3d-check"><input type="checkbox" id="fm3dGround" checked> 地面を表示</label>
 <label class="fm3d-check"><input type="checkbox" id="fm3dPerspectiveGrid"> パースグリッドを表示</label>
 <div class="fm3d-settings-section"><strong>接地</strong><button type="button" id="fm3dGroundSelected" class="fm3d-subbutton">選択モデルを地面に接地</button><span class="fm3d-guide-note">現在の姿勢・回転・倍率で、最下点を地面に合わせます。</span></div>
-<div class="fm3d-settings-section"><strong>光源</strong><label class="fm3d-check"><input type="checkbox" id="fm3dLightHandle" checked> 光源ハンドルを表示</label><div class="fm3d-guide-note">3D画面の黄色い光源マークをドラッグして光の方向を変更できます。</div><div class="fm3d-guide-note">光源位置（X / Y / Z）：<output id="fm3dLightPosition">1.2 / 1.6 / 0.6</output></div><button type="button" id="fm3dLightReset" class="fm3d-subbutton">光源位置を初期化</button></div>
+<div class="fm3d-settings-section fm3d-light-panel"><strong>光源</strong>
+<div class="fm3d-light-editor"><canvas id="fm3dLightSphere" width="156" height="156" role="img" aria-label="ドラッグして光の方向を調整"></canvas><span class="fm3d-guide-note">球をドラッグして光が当たる方向を調整</span></div>
+<div class="fm3d-light-strength"><label for="fm3dLightIntensity">光の強さ</label><input id="fm3dLightIntensity" type="range" min="0" max="5" step="0.05" value="2.4"><output id="fm3dLightIntensityValue">2.40</output></div>
+<button type="button" id="fm3dLightReset" class="fm3d-subbutton">光源を初期化</button></div>
 <div class="fm3d-settings-section"><label class="fm3d-bg-label" for="fm3dBackground"><strong>3D画面の背景色</strong><input type="color" id="fm3dBackground" value="#f7f0e6"></label><span class="fm3d-guide-note">背景色と光源ハンドルは2Dレイヤーに書き出しません。</span></div>
 <p class="fm3d-guide-note">地面は水平（XZ面）です。グリッドは視点に応じて奥行きが変化します。どちらもレイヤー画像には書き出されません。</p>
 </div><label class="fm3d-check"><input type="checkbox" id="fm3dWire"> ワイヤーフレーム表示</label><button type="button" id="fm3dReset" class="fm3d-subbutton">姿勢・視点をリセット</button>

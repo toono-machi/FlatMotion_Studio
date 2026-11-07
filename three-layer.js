@@ -10,7 +10,7 @@ function loadEngine(){return enginePromise ||= Promise.all([
 ]).then(([THREE,obj,fbx,gltf,transform])=>({THREE,OBJLoader:obj.OBJLoader,FBXLoader:fbx.FBXLoader,GLTFLoader:gltf.GLTFLoader,TransformControls:transform.TransformControls})).catch(e=>{enginePromise=null;throw e;});}
 const $=s=>document.querySelector(s),rad=d=>d*Math.PI/180;
 const defaultTransform=()=>({pos:[0,0,0],rot:[0,0,0],scale:1,bones:{},wire:false});
-const defaultScene=()=>({camera:[0,12,2.7],wire:false,ground:true,perspectiveGrid:false,background:'#f7f0e6',lightPosition:[1.2,1.6,.6],lightHandle:true});
+const defaultScene=()=>({camera:[0,12,2.7],wire:false,ground:true,perspectiveGrid:false,background:'#f7f0e6',lightPosition:[1.2,1.6,.6],lightHandle:false,lightIntensity:2.4});
 const FLOOR_Y=-.92;
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 const TOOL_NAMES={hand:'ハンド',move:'移動',rotate:'回転',camera:'カメラ'};
@@ -57,7 +57,7 @@ function initCanvas(s){
  const {THREE}=s,canvas=$('#fm3dCanvas');canvas.width=840;canvas.height=570;
  const renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,preserveDrawingBuffer:true});renderer.setPixelRatio(1);renderer.setSize(840,570,false);renderer.outputColorSpace=THREE.SRGBColorSpace;
  const scene=new THREE.Scene(),root=new THREE.Group();scene.add(root);scene.add(new THREE.HemisphereLight(0xffffff,0x98847a,2.35));
- const light=new THREE.DirectionalLight(0xffffff,2.4);
+ const light=new THREE.DirectionalLight(0xffffff,s.lightIntensity);
  light.position.fromArray(s.lightPosition);light.target.position.set(0,0,0);scene.add(light,light.target);
  const lightHandle=new THREE.Group();lightHandle.name='FM3D_LIGHT_GIZMO';
  const bulb=new THREE.Mesh(new THREE.SphereGeometry(.13,20,12),new THREE.MeshBasicMaterial({color:0xffd47e,depthTest:false}));bulb.renderOrder=90;lightHandle.add(bulb);
@@ -178,8 +178,8 @@ function draw(s){if(!s?.renderer)return;
  for(const item of s.items){item.group.visible=item.visible;item.group.position.set(...item.settings.pos);item.group.rotation.set(...item.settings.rot.map(rad));item.group.scale.setScalar(Math.max(0.01,Number(item.settings.scale)||1));
   item.model.traverse(m=>{if(!m.isMesh||!m.material)return;for(const mat of Array.isArray(m.material)?m.material:[m.material]){if(mat)mat.wireframe=!!(s.wire||item.settings.wire);}});
  }
- s.light.position.fromArray(s.lightPosition);s.lightHandle.position.copy(s.light.position);
- s.lightHandle.visible=!!s.lightHandleEnabled;
+ s.light.position.fromArray(s.lightPosition);s.light.intensity=s.lightIntensity;s.lightHandle.position.copy(s.light.position);
+ s.lightHandle.visible=false;
  s.renderer.setClearColor(s.backgroundColor,1);
  const yaw=rad(s.cameraSettings[0]),pitch=rad(s.cameraSettings[1]),distance=s.cameraSettings[2];
  s.camera.position.set(distance*Math.sin(yaw)*Math.cos(pitch),distance*Math.sin(pitch),distance*Math.cos(yaw)*Math.cos(pitch)).add(s.cameraTarget);s.camera.lookAt(s.cameraTarget);
@@ -231,7 +231,7 @@ function syncInputs(s){if(!s)return;const obj=selected(s);
  $('#fm3dGround').checked=!!s.groundEnabled;
  $('#fm3dPerspectiveGrid').checked=!!s.perspectiveGridEnabled;
  $('#fm3dBackground').value=s.backgroundColor;
- $('#fm3dLightHandle').checked=!!s.lightHandleEnabled;
+ $('#fm3dLightIntensity').value=String(s.lightIntensity);$('#fm3dLightIntensityValue').textContent=s.lightIntensity.toFixed(2);drawLightSphere(s);
  const coordinates=$('#fm3dLightPosition');if(coordinates)coordinates.textContent=s.lightPosition.map(v=>Number(v).toFixed(2)).join(' / ');
  const n=$('#fm3dBone').value;if(n!==''){const a=obj?.settings.bones[n]||[0,0,0];document.querySelectorAll('[data-three-bone]').forEach(el=>el.value=a[+el.dataset.threeBone]||0);}
 }
@@ -247,7 +247,7 @@ async function open({layer=null,onSave,documentWidth,documentHeight}){
  show();report('3Dエンジンを準備中…');$('#fm3dCommit').disabled=true;
  try{
   const {THREE,...loaders}=await loadEngine();if(session)session.renderer?.dispose();
-  const saved=layer?.shape?.threeD||{};const s={THREE,loaders,layer,onSave,documentWidth,documentHeight,items:[],selectedId:null,cameraSettings:[...(saved.camera||saved.settings?.camera||defaultScene().camera)],wire:!!(saved.wire||saved.settings?.wire),tool:'camera',rotationAxis:'horizontal',cameraTarget:new THREE.Vector3(...(saved.cameraTarget||[0,0,0])),groundEnabled:saved.ground!==false,perspectiveGridEnabled:!!saved.perspectiveGrid,backgroundColor:/^#[0-9a-f]{6}$/i.test(saved.background||'')?saved.background:'#f7f0e6',lightPosition:Array.isArray(saved.lightPosition)&&saved.lightPosition.length===3&&saved.lightPosition.every(Number.isFinite)?[...saved.lightPosition]:[1.2,1.6,.6],lightHandleEnabled:saved.lightHandle!==false,transformDragging:false};
+  const saved=layer?.shape?.threeD||{};const s={THREE,loaders,layer,onSave,documentWidth,documentHeight,items:[],selectedId:null,cameraSettings:[...(saved.camera||saved.settings?.camera||defaultScene().camera)],wire:!!(saved.wire||saved.settings?.wire),tool:'camera',rotationAxis:'horizontal',cameraTarget:new THREE.Vector3(...(saved.cameraTarget||[0,0,0])),groundEnabled:saved.ground!==false,perspectiveGridEnabled:!!saved.perspectiveGrid,backgroundColor:/^#[0-9a-f]{6}$/i.test(saved.background||'')?saved.background:'#f7f0e6',lightPosition:Array.isArray(saved.lightPosition)&&saved.lightPosition.length===3&&saved.lightPosition.every(Number.isFinite)?[...saved.lightPosition]:[1.2,1.6,.6],lightHandleEnabled:false,lightIntensity:Number.isFinite(saved.lightIntensity)?clamp(saved.lightIntensity,0,5):2.4,transformDragging:false};
   session=s;initCanvas(s);
   const old=saved.source?[{source:saved.source,filename:saved.filename,format:saved.format,settings:saved.settings}]:[];
   const metas=Array.isArray(saved.models)?saved.models:old;
@@ -274,7 +274,7 @@ async function commit(){const s=session;if(!s?.items.length)return;$('#fm3dCommi
  s.renderer.setClearColor(0x000000,0);
  s.renderer.render(s.scene,s.camera);
  const data=s.renderer.domElement.toDataURL('image/png');const models=s.items.map(({source,format,filename,settings,visible})=>({source,format,filename,settings,visible}));
- const first=models[0];s.onSave({data,threeD:{models,camera:[...s.cameraSettings],wire:s.wire,ground:s.groundEnabled,perspectiveGrid:s.perspectiveGridEnabled,background:s.backgroundColor,lightPosition:[...s.lightPosition],lightHandle:s.lightHandleEnabled,cameraTarget:s.cameraTarget.toArray(),filename:models.length===1?first.filename:`${models.length}モデル`,format:'multi'},width:Math.min(s.documentWidth,s.documentHeight*s.renderer.domElement.width/s.renderer.domElement.height,1600),height:Math.min(s.documentWidth*s.renderer.domElement.height/s.renderer.domElement.width,s.documentHeight,1600*s.renderer.domElement.height/s.renderer.domElement.width)});hide();
+ const first=models[0];s.onSave({data,threeD:{models,camera:[...s.cameraSettings],wire:s.wire,ground:s.groundEnabled,perspectiveGrid:s.perspectiveGridEnabled,background:s.backgroundColor,lightPosition:[...s.lightPosition],lightHandle:false,lightIntensity:s.lightIntensity,cameraTarget:s.cameraTarget.toArray(),filename:models.length===1?first.filename:`${models.length}モデル`,format:'multi'},width:Math.min(s.documentWidth,s.documentHeight*s.renderer.domElement.width/s.renderer.domElement.height,1600),height:Math.min(s.documentWidth*s.renderer.domElement.height/s.renderer.domElement.width,s.documentHeight,1600*s.renderer.domElement.height/s.renderer.domElement.width)});hide();
  }catch(e){report('反映できません：'+readableError(e));}finally{if(session===s){updateTransform(s);draw(s);}$('#fm3dCommit').disabled=false;}}
 $('#fm3dClose').addEventListener('click',hide);$('#fm3dCancel').addEventListener('click',hide);
 $('#fm3dFile').addEventListener('change',e=>{void fileChanged([...e.target.files]);e.target.value='';});
@@ -287,7 +287,44 @@ $('#fm3dObjects').addEventListener('click',e=>{const button=e.target.closest('[d
  else if(action==='up'||action==='down'){const j=index+(action==='up'?-1:1);if(j<0||j>=s.items.length)return;[s.items[index],s.items[j]]=[s.items[j],s.items[index]];renderItems(s);}
 });
 $('#fm3dGroundSelected').addEventListener('click',()=>{if(session)putSelectedOnGround(session);});
-$('#fm3dLightReset').addEventListener('click',()=>{if(!session)return;session.lightPosition=[1.2,1.6,.6];syncInputs(session);draw(session);});
+// Clip Studio-style lighting sphere: point on the sphere selects a directional light.
+function drawLightSphere(s){
+ const canvas=$('#fm3dLightSphere');if(!canvas||!s)return;
+ const ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height,cx=w/2,cy=h/2,r=Math.min(w,h)*.42;
+ ctx.clearRect(0,0,w,h);
+ const v=new s.THREE.Vector3(...s.lightPosition).normalize();
+ const img=ctx.createImageData(w,h);
+ const ambient=.16,diffuse=.84;
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+  const nx=(x+.5-cx)/r,ny=(cy-y-.5)/r,d2=nx*nx+ny*ny;if(d2>1)continue;
+  const nz=Math.sqrt(1-d2);const lit=Math.max(0,nx*v.x+ny*v.y+nz*v.z);
+  const shade=Math.round(255*Math.min(1,ambient+diffuse*lit));
+  const off=(y*w+x)*4;img.data[off]=shade;img.data[off+1]=shade;img.data[off+2]=shade;img.data[off+3]=255;
+ }
+ ctx.putImageData(img,0,0);
+ ctx.strokeStyle='#a29380';ctx.lineWidth=1;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();
+ // The marker remains on the visible sphere even if the light points behind it.
+ const markX=cx+v.x*r,markY=cy-v.y*r;
+ ctx.beginPath();ctx.arc(markX,markY,4,0,Math.PI*2);ctx.fillStyle='#d6ad72';ctx.fill();ctx.strokeStyle='#45372e';ctx.lineWidth=1.5;ctx.stroke();
+}
+function setLightFromSphere(e){
+ const s=session,canvas=$('#fm3dLightSphere');if(!s||!canvas)return;
+ const b=canvas.getBoundingClientRect(),cx=b.left+b.width/2,cy=b.top+b.height/2,r=Math.min(b.width,b.height)*.42;
+ let x=(e.clientX-cx)/r,y=(cy-e.clientY)/r;const len=Math.hypot(x,y);
+ if(len>1){x/=len;y/=len;}
+ const z=Math.sqrt(Math.max(0,1-x*x-y*y));
+ const dist=3;s.lightPosition=[x*dist,y*dist,z*dist];
+ const coordinates=$('#fm3dLightPosition');if(coordinates)coordinates.textContent=s.lightPosition.map(v=>v.toFixed(2)).join(' / ');
+ drawLightSphere(s);draw(s);
+}
+{
+ const sphere=$('#fm3dLightSphere');let activePointer=null;
+ sphere.addEventListener('pointerdown',e=>{if(e.button!==0)return;activePointer=e.pointerId;sphere.setPointerCapture(e.pointerId);setLightFromSphere(e);e.preventDefault();});
+ sphere.addEventListener('pointermove',e=>{if(activePointer===e.pointerId){setLightFromSphere(e);e.preventDefault();}});
+ const end=e=>{if(activePointer===e.pointerId)activePointer=null;};
+ sphere.addEventListener('pointerup',end);sphere.addEventListener('pointercancel',end);
+}
+$('#fm3dLightReset').addEventListener('click',()=>{if(!session)return;session.lightPosition=[1.2,1.6,.6];session.lightIntensity=2.4;syncInputs(session);draw(session);});
 $('#fm3dReset').addEventListener('click',()=>{const s=session;if(!s)return;const item=selected(s);if(item){item.settings=defaultTransform();item.bones.forEach((b,i)=>b.rotation.copy(item.restBones[i]));}else{s.cameraSettings=[...defaultScene().camera];s.cameraTarget.set(0,0,0);}renderBones(s);syncInputs(s);draw(s);});
 $('#fm3dModal').addEventListener('input',e=>{const s=session;if(!s)return;const el=e.target,item=selected(s);
  if(el.matches('[data-three-setting]')){const [key,i]=el.dataset.threeSetting.split(':');if(key==='camera')s.cameraSettings[+i]=+el.value;else if(item){if(key==='scale')item.settings.scale=+el.value;else item.settings[key][+i]=+el.value;}syncInputs(s);draw(s);}
@@ -296,7 +333,7 @@ $('#fm3dModal').addEventListener('input',e=>{const s=session;if(!s)return;const 
  else if(el.id==='fm3dGround'){s.groundEnabled=el.checked;draw(s);}
  else if(el.id==='fm3dPerspectiveGrid'){s.perspectiveGridEnabled=el.checked;draw(s);}
  else if(el.id==='fm3dBackground'){s.backgroundColor=el.value;draw(s);}
- else if(el.id==='fm3dLightHandle'){s.lightHandleEnabled=el.checked;draw(s);}
+ else if(el.id==='fm3dLightIntensity'){s.lightIntensity=clamp(+el.value,0,5);$('#fm3dLightIntensityValue').textContent=s.lightIntensity.toFixed(2);drawLightSphere(s);draw(s);}
 });
 $('#fm3dBone').addEventListener('change',()=>syncInputs(session));
 document.querySelectorAll('[data-fm3d-tool]').forEach(b=>b.addEventListener('click',()=>{if(!session)return;session.tool=b.dataset.fm3dTool;updateTransform(session);draw(session);}));
