@@ -160,7 +160,7 @@ function isFolderAncestorOfLayer(folderId,layer){return folderAncestry(layer).so
 function effectiveVisible(layer){return layer?.visible!==false&&folderAncestry(layer).every(f=>f.visible!==false);}
 function effectiveLocked(layer){return !!layer?.locked||folderAncestry(layer).some(f=>f.locked);}
 function lockedFolderAncestor(layer){return folderAncestry(layer).filter(f=>f.locked).at(-1)||null;}
-function canTranslate(layer){return !!layer&&!lockedFolderAncestor(layer);}
+function canTranslate(layer){return !!layer&&!effectiveLocked(layer);}
 function isEditBlocked(layer){return effectiveLocked(layer);}
 function effectiveOpacity(layer,frame=S.frame){return folderAncestry(layer).reduce((v,f)=>v*clamp(getPose(f,frame).opacity,0,1),1);}
 function layerTree(parentId=null,depth=0,includeHidden=true){if(depth>25)return[];const out=[];for(const l of doc.layers){if((l.folderId||null)!==parentId)continue;out.push({layer:l,depth});if(isFolder(l)&&(includeHidden||!S.collapsedFolders.has(l.id)))out.push(...layerTree(l.id,depth+1,includeHidden));}return out;}
@@ -734,11 +734,34 @@ function rasterFinish(d){
  if(S.drag===d)S.drag=null;
 }
 function initMesh(layer,divisions=2){if(!layer)return;const b=getBBox(layer),w=Math.max(1,b.w),h=Math.max(1,b.h);const mesh={cols:divisions,rows:divisions,bounds:{x:b.x,y:b.y,w,h},keys:{}};mesh.keys['0']={points:meshRest(mesh),ease:'ease'};layer.mesh=mesh;}
-function convertToPath(layer){const sh=layer.shape;if(sh.type==='path')return true;let points=[];
- if(sh.type==='rect'){points=rectContourPoints(sh);}
- else if(sh.type==='ellipse'){for(let i=0;i<24;i++){const a=i*Math.PI*2/24;points.push({x:sh.cx+Math.cos(a)*sh.rx,y:sh.cy+Math.sin(a)*sh.ry});}}
- else return false;
- layer.shape={type:'path',points,closed:true,smooth:false};delete layer.morphKeys;return true;
+// Convert editable primitives into the fewest possible Bézier anchors.
+// Rectangle: four corners. Ellipse: four exact cubic Bézier quarter-arc
+// approximations (kappa), not a polygon made of 24 independent points.
+// Triangle is already stored as a 3-point editable path by the shape tool.
+function convertToPath(layer){
+ const sh=layer?.shape;if(!sh)return false;
+ if(sh.type==='path')return true;
+ let points=[],pathMode='line';
+ if(sh.type==='rect'){
+  const x=num(sh.x),y=num(sh.y),w=num(sh.w),h=num(sh.h);
+  points=[{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}];
+ }else if(sh.type==='ellipse'){
+  const cx=num(sh.cx),cy=num(sh.cy),rx=Math.abs(num(sh.rx)),ry=Math.abs(num(sh.ry));
+  const k=4*(Math.sqrt(2)-1)/3;
+  points=[
+   {x:cx+rx,y:cy,inX:0,inY:k*ry,outX:0,outY:-k*ry},
+   {x:cx,y:cy-ry,inX:k*rx,inY:0,outX:-k*rx,outY:0},
+   {x:cx-rx,y:cy,inX:0,inY:-k*ry,outX:0,outY:k*ry},
+   {x:cx,y:cy+ry,inX:-k*rx,inY:0,outX:k*rx,outY:0}
+  ];
+  pathMode='bezier';
+ }else return false;
+ // Preserve layer-level fill, stroke, texture, outlines, motion and pivot.
+ // A rounded rectangle still uses four anchor points, as requested; its
+ // rectangle-specific corner/inset controls cannot be kept after conversion.
+ layer.shape={type:'path',points,closed:true,smooth:false,pathMode};
+ delete layer.morphKeys;
+ return true;
 }
 function editDeformPoint(d,p){const layer=layerBy(d.id);if(!layer||layer.locked)return;const local=matApply(matInv(getWorld(layer)),p),current={x:rnd(local.x,2),y:rnd(local.y,2)};
  const kind=d.type==='morph'?'morphKeys':'mesh';const old=d.initial[d.index];if(!d.changed&&dist(old,current)<.25)return;
@@ -1704,7 +1727,7 @@ function renderLayers(){
   <input class="layer-select-check" type="checkbox" data-layer-check="${esc(l.id)}" ${checked?'checked':''} title="複数選択に追加／解除" aria-label="${esc(l.name)}を選択" />
   <button type="button" class="folder-toggle${folder?'':' spacer'}" ${folder?`data-action="toggleFolder" data-id="${esc(l.id)}" title="${locked?'ロック解除すると開けます':`${l.mergeGroup?'統合オブジェクト':'フォルダー'}を${S.collapsedFolders.has(l.id)?'展開':'折りたたむ'}`}" ${locked?'disabled':''}`:''}>${folder?(S.collapsedFolders.has(l.id)||locked?'▶':'▼'):'·'}</button>
   <button type="button" class="mini-action visibility-action${!visible?' muted':''}" data-action="visibility" data-id="${esc(l.id)}" title="${visible?'非表示にする':'表示する'}" aria-label="${visible?'非表示にする':'表示する'}" aria-pressed="${visible}"><img class="eye-art ${visible?'shown':'hidden'}" src="${EYE_IMAGES[visible?'shown':'hidden']}" alt="" aria-hidden="true" draggable="false"></button>
-  <button type="button" class="mini-action lock-toggle${l.locked?' is-locked':''}" data-action="lock" data-id="${esc(l.id)}" title="${l.locked?'ロック解除（移動以外の編集を許可）':'施錠（位置移動のみ許可）'}" aria-label="${l.locked?'ロック解除':'ロックする'}" ${lockedFolderAncestor(l)?'disabled':''}><img src="assets/${l.locked?'lock-closed':'lock-open'}.png" alt="" draggable="false"></button>
+  <button type="button" class="mini-action lock-toggle${l.locked?' is-locked':''}" data-action="lock" data-id="${esc(l.id)}" title="${l.locked?'ロック解除（移動・編集を許可）':'施錠（移動・編集を禁止）'}" aria-label="${l.locked?'ロック解除':'ロックする'}" ${lockedFolderAncestor(l)?'disabled':''}><img src="assets/${l.locked?'lock-closed':'lock-open'}.png" alt="" draggable="false"></button>
   <span class="layer-thumb" title="${esc(l.name)} の描画プレビュー" aria-hidden="true">${layerThumbnailMarkup(l)}</span>
   <span class="layer-name" title="ダブルクリックで名前変更：${esc(l.name)}" data-rename-layer="${esc(l.id)}">${esc(l.name)}</span>
   <span class="layer-icon${folder?' folder-icon':''}${l.mergeGroup?' merged-group-icon':''}" title="${folder?(l.mergeGroup?'統合レイヤー':'グループフォルダー'):l.shape.raster?'ラスターレイヤー':'ベクターレイヤー'}">${icon}</span>
@@ -2111,7 +2134,7 @@ function folderInspector(l){const p=getPose(l),members=doc.layers.filter(x=>memb
 function lockedInspector(layer){
  const p=getPose(layer),kind=layer.mergeGroup?'統合オブジェクト':isFolder(layer)?'フォルダー':'レイヤー';
  return `<section class="prop-section locked-inspector"><div class="prop-heading"><strong>施錠中：${esc(layer.name)}</strong><span class="prop-chip">${kind}</span></div>
- <div class="lock-inspector-head"><img src="assets/lock-closed.png" alt=""/><span>位置の移動のみ可能です。色・パス・回転・拡大縮小・レイヤー構成は編集できません。${isFolder(layer)?'ロック中は内部を開けません。':''}</span></div>
+ <div class="lock-inspector-head"><img src="assets/lock-closed.png" alt=""/><span>移動・回転・拡大縮小・頂点・色などの編集はできません。${isFolder(layer)?'ロック中は内部を開けません。':''}</span></div>
  <div class="prop-grid"><div class="field-wrap"><label>位置 X</label><input type="number" step="1" data-pose="x" value="${rnd(p.x)}"/></div><div class="field-wrap"><label>位置 Y</label><input type="number" step="1" data-pose="y" value="${rnd(p.y)}"/></div></div>
  <button type="button" class="soft-btn wide" data-action="unlockSelected">鍵を解除して編集する</button></section>`;
 }
@@ -2142,7 +2165,7 @@ function renderInspector(){const el=$('#inspector');const l=sel();if(l?.shape?.t
  const desc=l.shape.type==='merged'?'統合済みベクターオブジェクト':l.shape.type==='svg'?'SVG素材（元のパスを保持）':l.shape.type==='image'?'PNG素材（ラスターレイヤー）':l.shape.type==='path'?(l.shape.lineArt?'線画ベクターパス':'編集可能なパス'):l.shape.type==='rect'?'ベクター長方形':l.shape.type==='text'?'編集可能なテキスト':'ベクター楕円';
  const others=doc.layers.filter(x=>!isFolder(x)&&x.id!==l.id&&!descendantOf(x.id,l.id));
  el.innerHTML=`
- <section class="prop-section"><div class="prop-heading"><strong>パーツ情報</strong><span class="prop-chip">${esc(desc)}</span></div><div class="prop-row"><label>パーツ名</label><input data-field="name" type="text" value="${esc(l.name)}" maxlength="60"></div><div class="prop-row"><label>親パーツ</label><select data-field="parent"><option value="">親なし（独立）</option>${others.map(a=>`<option value="${a.id}" ${l.parent===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div><div class="prop-tip">親を設定すると、親の移動や回転に子パーツも追従します。胴体→腕→前腕のような構造を作れます。</div><div class="prop-row"><label>所属フォルダー</label><select data-field="folderId"><option value="">最上位</option>${folderOptions(l).map(f=>`<option value="${esc(f.id)}" ${l.folderId===f.id?'selected':''}>${esc(f.name)}</option>`).join('')}</select></div><div class="prop-tip">左のレイヤー一覧からフォルダーへドラッグしても収納できます。</div></section>
+ <section class="prop-section"><div class="prop-heading"><strong>パーツ情報</strong><span class="prop-chip">${esc(desc)}</span></div><div class="prop-row"><label>パーツ名</label><input data-field="name" type="text" value="${esc(l.name)}" maxlength="60"></div>${['rect','ellipse'].includes(l.shape.type)?`<div class="prop-control-row"><button class="soft-btn primary wide" data-action="convertPath">◇ 図形をパス化して頂点編集（4頂点）</button></div><div class="prop-tip">四角形は4頂点、楕円は4頂点のベジェ曲線で変換します。塗り・線・テクスチャは保持します。角丸・凹み角の個別設定は通常の4頂点に変換されます。</div>`:''}<div class="prop-row"><label>親パーツ</label><select data-field="parent"><option value="">親なし（独立）</option>${others.map(a=>`<option value="${a.id}" ${l.parent===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div><div class="prop-tip">親を設定すると、親の移動や回転に子パーツも追従します。胴体→腕→前腕のような構造を作れます。</div><div class="prop-row"><label>所属フォルダー</label><select data-field="folderId"><option value="">最上位</option>${folderOptions(l).map(f=>`<option value="${esc(f.id)}" ${l.folderId===f.id?'selected':''}>${esc(f.name)}</option>`).join('')}</select></div><div class="prop-tip">左のレイヤー一覧からフォルダーへドラッグしても収納できます。</div></section>
  ${textInspector(l)}
  ${lineArtInspector(l)}
  ${repeatInspector(l)}
@@ -2276,7 +2299,7 @@ function pathInspector(l){if(l.shape.type!=='path')return'';const sh=l.shape,act
 function deformationInspector(l){const isPath=l.shape.type==='path';const hasMesh=!!l.mesh;const morphCount=Object.keys(l.morphKeys||{}).length,meshCount=Object.keys(l.mesh?.keys||{}).length;
  return `<section class="prop-section deform-panel"><div class="prop-heading"><strong>変形アニメーション</strong><span class="prop-chip blue">DEFORM</span></div>
  <div class="deform-block"><div class="deform-subtitle"><b>輪郭モーフ</b><span>${morphCount} キー</span></div>
- <div class="prop-tip">${isPath?'「頂点（N）」で頂点をドラッグ。先頭フレームで基本形、2フレーム目以降で変形キーを編集します。フレームごとに形が滑らかにつながります。':'四角形・楕円は「パスに変換」して輪郭を変形できます。SVG/PNG素材はメッシュ変形をご利用ください。'}</div>
+ <div class="prop-tip">${isPath?'「頂点（N）」で頂点をドラッグ。先頭フレームで基本形、2フレーム目以降で変形キーを編集します。フレームごとに形が滑らかにつながります。':'四角形・楕円は「パスに変換」して4頂点で輪郭を変形できます。三角形は既に3頂点のパスです。SVG/PNG素材はメッシュ変形をご利用ください。'}</div>
  ${isPath?`<div class="prop-control-row"><button class="soft-btn primary" data-action="morphTool">頂点編集を開始</button><button class="soft-btn" data-action="morphReset">現在の形を初期化</button></div>${morphCount?'<button class="deform-text-btn" data-action="morphClear">頂点変形キーをすべて削除</button>':''}`:l.shape.type==='rect'||l.shape.type==='ellipse'?'<button class="soft-btn primary wide" data-action="convertPath">◇ 編集可能なパスに変換</button>':''}
  </div>
  <div class="deform-block"><div class="deform-subtitle"><b>メッシュ変形</b><span>${hasMesh?`${l.mesh.cols}×${l.mesh.rows} / ${meshCount} キー`:'未設定'}</span></div>
@@ -3058,8 +3081,8 @@ function deleteSelected(){
  if(toRemove.has(S.cropSourceId))S.cropSourceId='';
  setSingleSelection(null);mutated();toast('選択したレイヤーを削除しました。');
 }
-function undo(){if(!S.history.length)return;S.future.push(compactHistoryState());doc=restoreHistoryState(S.history.pop());S.multiSelected=new Set([...S.multiSelected].filter(id=>!!layerBy(id)));S.selected=layerBy(S.selected)?.id||[...S.multiSelected].at(-1)||null;S.frame=clamp(S.frame,0,total()-1);void prepareProjectAudio();void prepareSubviewReferences();void prepareProjectFonts();mutated();fitCanvas();}
-function redo(){if(!S.future.length)return;S.history.push(compactHistoryState());doc=restoreHistoryState(S.future.pop());S.multiSelected=new Set([...S.multiSelected].filter(id=>!!layerBy(id)));S.selected=layerBy(S.selected)?.id||[...S.multiSelected].at(-1)||null;S.frame=clamp(S.frame,0,total()-1);void prepareProjectAudio();void prepareSubviewReferences();void prepareProjectFonts();mutated();fitCanvas();}
+function undo(){if(!S.history.length)return;S.future.push(compactHistoryState());doc=restoreHistoryState(S.history.pop());S.multiSelected=new Set([...S.multiSelected].filter(id=>!!layerBy(id)));S.selected=layerBy(S.selected)?.id||[...S.multiSelected].at(-1)||null;S.frame=clamp(S.frame,0,total()-1);void prepareProjectAudio();void prepareSubviewReferences();void prepareProjectFonts();mutated();applyZoom();}
+function redo(){if(!S.future.length)return;S.history.push(compactHistoryState());doc=restoreHistoryState(S.future.pop());S.multiSelected=new Set([...S.multiSelected].filter(id=>!!layerBy(id)));S.selected=layerBy(S.selected)?.id||[...S.multiSelected].at(-1)||null;S.frame=clamp(S.frame,0,total()-1);void prepareProjectAudio();void prepareSubviewReferences();void prepareProjectFonts();mutated();applyZoom();}
 function makeDemo(){if(doc.layers.length&&!confirm('現在のパーツをサンプルに置き換えますか？'))return;snapshot();doc.layers=[];doc.width=960;doc.height=540;doc.fps=12;doc.seconds=6;doc.transparent=false;doc.background='#fff8ee';S.frame=0;
  const add=(name,shape,x,y,fill,parent=null)=>newLayer(shape,x,y,name,{fill,parent});
  const rect=(x,y,w,h,rx=0)=>({type:'rect',x,y,w,h,rx});const oval=(rx,ry,cx=0,cy=0)=>({type:'ellipse',rx,ry,cx,cy});
@@ -3264,7 +3287,7 @@ function pointerDown(e){if(e.button!==0&&e.button!==1)return;if(S.playing)stopPl
  if(S.nodeMode==='add'){S.nodeSelected.clear();S.nodeSelected.add(clicked);renderStage();renderInspector();return;}
  S.nodeSelected.clear();S.nodeSelected.add(clicked);
  S.drag=S.frame===0||S.activeContour>0?{type:'node',id:l.id,index:S.nodeIndex,contour:S.activeContour,original:copyPts(S.activeContour>0?l.shape.extraContours[S.activeContour-1]:l.shape.points),changed:false}:{type:'morph',id:l.id,index:S.nodeIndex,initial:getMorphPoints(l),changed:false};ART.setPointerCapture(e.pointerId);renderStage();renderInspector();}else if(type.startsWith('bezier-')&&S.tool==='node'&&l.shape.type==='path'){S.nodeIndex=+handle.dataset.point;S.vertexSelected=true;S.drag={type:'bezier',id:l.id,index:S.nodeIndex,side:type.slice(7),changed:false};ART.setPointerCapture(e.pointerId);renderInspector();}else if(type==='morph'&&S.tool==='morph'&&l.shape.type==='path'){S.drag={type:'morph',id:l.id,index:+handle.dataset.point,initial:getMorphPoints(l),changed:false};ART.setPointerCapture(e.pointerId);}else if(type==='mesh'&&S.tool==='mesh'&&l.mesh){S.drag={type:'mesh',id:l.id,index:+handle.dataset.point,initial:getMeshPoints(l),changed:false};ART.setPointerCapture(e.pointerId);}return;}
- if(S.tool==='select'){if(hit){const hitLayer=canvasMergeTarget(layerBy(hit.dataset.layerId));const l=isSelectableChildOfFolder(hitLayer,sel())&&!(sel()?.mergeGroup&&!S.collapsedFolders.has(sel().id))?sel():hitLayer;if(l&&canTranslate(l)){const multi=checkedLayers();if(multi.length>1&&(S.multiSelected.has(l.id)||hasSelectedFolderAncestor(l,S.multiSelected))){beginMultiMove(e,p);renderStage();return;}if(S.selected!==l.id||multi.length>1){setSingleSelection(l.id);renderLayers();renderInspector();}beginPoseDrag(e,'move',l,p);renderStage();return;}}selectLayer(null);return;}
+ if(S.tool==='select'){if(hit){const hitLayer=canvasMergeTarget(layerBy(hit.dataset.layerId));const l=isSelectableChildOfFolder(hitLayer,sel())&&!(sel()?.mergeGroup&&!S.collapsedFolders.has(sel().id))?sel():hitLayer;if(l&&canTranslate(l)){const multi=checkedLayers();if(multi.length>1&&(S.multiSelected.has(l.id)||hasSelectedFolderAncestor(l,S.multiSelected))){beginMultiMove(e,p);renderStage();return;}if(S.selected!==l.id||multi.length>1){setSingleSelection(l.id);renderLayers();renderInspector();}beginPoseDrag(e,'move',l,p);renderStage();return;}if(l&&effectiveLocked(l)){if(S.selected!==l.id){setSingleSelection(l.id);renderLayers();renderInspector();}renderStage();return;}}selectLayer(null);return;}
  if(S.tool==='pivot'){if(hit&&canvasMergeTarget(layerBy(hit.dataset.layerId))?.id!==S.selected){selectLayer(canvasMergeTarget(layerBy(hit.dataset.layerId))?.id);return;}const l=sel();if(l&&!l.locked){snapshot();const local=matApply(matInv(getWorld(l)),p);l.pivot={x:rnd(local.x,2),y:rnd(local.y,2)};mutated({full:false});renderInspector();S.drag={type:'pivot',id:l.id};ART.setPointerCapture(e.pointerId);}return;}
  if(S.tool==='node'||S.tool==='mesh'){if(hit&&canvasMergeTarget(layerBy(hit.dataset.layerId))?.id!==S.selected)selectLayer(canvasMergeTarget(layerBy(hit.dataset.layerId))?.id);else if(S.tool==='node'&&!hit&&S.vertexSelected){S.vertexSelected=false;S.nodeSelected.clear();renderStage();renderInspector();}return;}
  if(S.tool==='pen'||S.tool==='strokePen'){if(S.tool==='pen'&&S.pen.length>=3&&dist(S.pen[0],p)<Math.max(9,12/(S.zoom*S.fitScale))){finishPen(true);return;}if(e.detail>=2){if(S.pen.length>=2)finishPen(S.tool==='pen'&&S.pen.length>=3);return;}if(!S.pen.length||dist(S.pen.at(-1),p)>Math.max(1.8,3/(S.zoom*S.fitScale)))S.pen.push({x:rnd(p.x,2),y:rnd(p.y,2)});S.cursor=p;renderStage();return;}
@@ -3728,7 +3751,7 @@ const actions={flipHorizontal:()=>flipSelectedObjects('horizontal'),flipVertical
  meshTool:()=>{const l=sel();if(!l||l.locked)return;if(!l.mesh){snapshot();initMesh(l,+$('#meshDivisions')?.value||2);mutated();}setTool('mesh');},
  convertPath:()=>{const l=sel();if(!l||l.locked)return;snapshot();if(convertToPath(l)){mutated();setTool('node');}else toast('この素材の輪郭は直接パス変換できません。メッシュをご利用ください。');},
  morphReset:()=>resetDeformFrame('morph'),meshReset:()=>resetDeformFrame('mesh'),morphClear:()=>clearDeform('morph'),meshClear:()=>{clearDeform('mesh');if(S.tool==='mesh')setTool('select');},
- clip:(b)=>{const l=layerBy(b.dataset.id);if(l)toggleClip(l,!l.clipToBelow);},undo,redo,fit:fitCanvas,resetView:fitCanvas,resetRotation:resetViewRotation,zoomIn:()=>setViewZoom(S.zoom*1.25),zoomOut:()=>setViewZoom(S.zoom/1.25),toggleGrid:()=>{snapshot();doc.gridVisible=doc.gridVisible===false;saveLocal();renderStage();updateButtons();const input=$('#gridVisibleCheck');if(input)input.checked=doc.gridVisible;},duplicate,mergeLayers:mergeSelectedLayers,unmergeLayers:unmergeSelectedLayers,unmergeThis:(b)=>{const l=layerBy(b.dataset.id);if(l?.mergeGroup){setSingleSelection(l.id);unmergeSelectedLayers();}},expandMerged:expandMergedGroup,newFolder:createFolder,addFolderChild:()=>$('#fileAssets').click(),ungroup:()=>{const l=sel();if(isFolder(l))ungroupFolder(l);},clearLayerContents, toggleFolder:(b)=>{const id=b.dataset.id;if(effectiveLocked(layerBy(id))){toast('ロックを解除すると展開できます。');return;}S.collapsedFolders.has(id)?S.collapsedFolders.delete(id):S.collapsedFolders.add(id);renderLayers();renderTimeline();},delete:deleteSelected,up:()=>reorder(1),down:()=>reorder(-1),addKey,removeKey,play:togglePlayback,first:()=>{stopPlayback();frameTo(0,{timeline:true});},next:()=>{stopPlayback();frameTo(S.frame+1,{timeline:true});},demo:makeDemo,clear:()=>{if(doc.layers.length&&!confirm('すべてのパーツを削除しますか？'))return;snapshot();doc.layers=[];setSingleSelection(null);S.frame=0;mutated();},visibility:(b)=>{const l=layerBy(b.dataset.id);if(!l)return;snapshot();l.visible=l.visible===false;mutated();},lock:(b)=>{const l=layerBy(b.dataset.id);if(!l||lockedFolderAncestor(l))return;snapshot();l.locked=!l.locked;if(l.locked&&isFolder(l)){S.collapsedFolders.add(l.id);if(sel()&&memberOfFolder(sel(),l.id))setSingleSelection(l.id);}if(l.locked&&S.selected===l.id){S.tool='select';S.pen=[];S.vertexSelected=false;}mutated();toast(l.locked?'ロックしました。位置移動のみ可能です。':'ロックを解除しました。編集・展開できます。');}};
+ clip:(b)=>{const l=layerBy(b.dataset.id);if(l)toggleClip(l,!l.clipToBelow);},undo,redo,fit:fitCanvas,resetView:fitCanvas,resetRotation:resetViewRotation,zoomIn:()=>setViewZoom(S.zoom*1.25),zoomOut:()=>setViewZoom(S.zoom/1.25),toggleGrid:()=>{snapshot();doc.gridVisible=doc.gridVisible===false;saveLocal();renderStage();updateButtons();const input=$('#gridVisibleCheck');if(input)input.checked=doc.gridVisible;},duplicate,mergeLayers:mergeSelectedLayers,unmergeLayers:unmergeSelectedLayers,unmergeThis:(b)=>{const l=layerBy(b.dataset.id);if(l?.mergeGroup){setSingleSelection(l.id);unmergeSelectedLayers();}},expandMerged:expandMergedGroup,newFolder:createFolder,addFolderChild:()=>$('#fileAssets').click(),ungroup:()=>{const l=sel();if(isFolder(l))ungroupFolder(l);},clearLayerContents, toggleFolder:(b)=>{const id=b.dataset.id;if(effectiveLocked(layerBy(id))){toast('ロックを解除すると展開できます。');return;}S.collapsedFolders.has(id)?S.collapsedFolders.delete(id):S.collapsedFolders.add(id);renderLayers();renderTimeline();},delete:deleteSelected,up:()=>reorder(1),down:()=>reorder(-1),addKey,removeKey,play:togglePlayback,first:()=>{stopPlayback();frameTo(0,{timeline:true});},next:()=>{stopPlayback();frameTo(S.frame+1,{timeline:true});},demo:makeDemo,clear:()=>{if(doc.layers.length&&!confirm('すべてのパーツを削除しますか？'))return;snapshot();doc.layers=[];setSingleSelection(null);S.frame=0;mutated();},visibility:(b)=>{const l=layerBy(b.dataset.id);if(!l)return;snapshot();l.visible=l.visible===false;mutated();},lock:(b)=>{const l=layerBy(b.dataset.id);if(!l||lockedFolderAncestor(l))return;snapshot();l.locked=!l.locked;if(l.locked&&isFolder(l)){S.collapsedFolders.add(l.id);if(sel()&&memberOfFolder(sel(),l.id))setSingleSelection(l.id);}if(l.locked&&S.selected===l.id){S.tool='select';S.pen=[];S.vertexSelected=false;}mutated();toast(l.locked?'ロックしました。移動・編集はできません。':'ロックを解除しました。移動・編集できます。');}};
 let lastLayerNameClick={id:'',at:0};
 document.addEventListener('change',e=>{if(e.target.name==='fmTriangleDirection'){S.triangleDirection=e.target.value==='down'?'down':'up';try{localStorage.setItem('flatmotion.triangle.direction',S.triangleDirection);}catch(_){}renderInspector();renderStage();return;}if(e.target.name==='fmNodeMode'){S.nodeMode=e.target.value;S.nodeSelected.clear();S.vertexSelected=false;renderStage();renderInspector();}else if(e.target.id==='fmNodeInsertCount'){S.nodeInsertCount=clamp(Math.round(num(e.target.value,1)),1,100);renderInspector();}});
 document.addEventListener('click',e=>{const remove=e.target.closest('[data-font-delete]');if(remove){e.stopPropagation();void removeCustomFont(remove.dataset.fontDelete);return;}
