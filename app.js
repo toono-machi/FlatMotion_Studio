@@ -3813,30 +3813,47 @@ $('#stageViewport').addEventListener('pointerdown',e=>{if((S.tool==='hand'||e.bu
 $('#stageViewport').addEventListener('pointermove',moveViewGesture);
 $('#stageViewport').addEventListener('pointerup',endViewGesture);
 $('#stageViewport').addEventListener('pointercancel',endViewGesture);
-$('#artboard').addEventListener('pointerdown',e=>{if(e.altKey&&S.tool==='node'){const target=e.target.closest('[data-handle="node"]');if(target){deleteNode(+target.dataset.point);return;}}pointerDown(e);});
-$('#artboard').addEventListener('pointermove',pointerMove);
-$('#artboard').addEventListener('pointerup',pointerUp);
-$('#artboard').addEventListener('pointercancel',pointerUp);
-$('#artboard').addEventListener('dblclick',e=>{if(S.tool==='node'&&S.nodeMode==='edit')insertNodeAt(ptFromEvent(e));});
-$('#artboard').addEventListener('contextmenu',e=>{
- e.preventDefault();
- // 頂点ツール中に頂点マーカーを右クリックした場合だけ削除する。
- if(S.tool!=='node')return;
+// Delete nodes only on an explicit physical mouse right-button press. Browsers
+// also dispatch `contextmenu` for a long press (touch/pen) and during some
+// captured drags, so deletion must never be driven by `contextmenu`.
+function deleteNodeOnExplicitRightClick(e){
+ if(e.button!==2||e.pointerType!=='mouse'||S.tool!=='node'||S.drag)return false;
  const marker=e.target.closest?.('[data-handle="node"]');
- if(!marker||!$('#artboard').contains(marker))return;
+ if(!marker||!ART.contains(marker))return false;
  const l=sel();
- if(!l||l.shape?.type!=='path'||effectiveLocked(l))return;
+ if(!l||l.shape?.type!=='path'||effectiveLocked(l))return false;
  const index=Number(marker.dataset.point);
- const pts=S.activeContour>0&&l.shape.extraContours?.[S.activeContour-1]?l.shape.extraContours[S.activeContour-1]:l.shape.points;
- if(!Number.isInteger(index)||index<0||index>=pts.length)return;
+ const contour=S.activeContour;
+ const points=contour>0&&l.shape.extraContours?.[contour-1]?l.shape.extraContours[contour-1]:l.shape.points;
+ if(!Number.isInteger(index)||index<0||index>=points.length)return false;
+ e.preventDefault();
+ e.stopPropagation();
+ if(points.length<=(contour>0||l.shape.closed?3:2)){
+  toast('これ以上点を削除できません。');return true;
+ }
  deleteNode(index);
- // 削除後も頂点ツールのまま、残った頂点の選択を維持する。
- const updated= S.activeContour>0&&l.shape.extraContours?.[S.activeContour-1]?l.shape.extraContours[S.activeContour-1]:l.shape.points;
+ const updated=contour>0&&l.shape.extraContours?.[contour-1]?l.shape.extraContours[contour-1]:l.shape.points;
  S.nodeSelected.clear();
  if(updated?.length){S.nodeIndex=Math.min(index,updated.length-1);S.nodeSelected.add(S.nodeIndex);S.vertexSelected=true;}
  else S.vertexSelected=false;
  renderStage();renderInspector();
+ return true;
+}
+$('#artboard').addEventListener('pointerdown',e=>{
+ if(e.button===2){deleteNodeOnExplicitRightClick(e);return;}
+ if(e.button!==0&&e.button!==1)return;
+ if(e.altKey&&e.button===0&&S.tool==='node'){
+  const target=e.target.closest('[data-handle="node"]');
+  if(target){e.preventDefault();deleteNode(+target.dataset.point);return;}
+ }
+ pointerDown(e);
 });
+$('#artboard').addEventListener('pointermove',pointerMove);
+$('#artboard').addEventListener('pointerup',pointerUp);
+$('#artboard').addEventListener('pointercancel',pointerUp);
+$('#artboard').addEventListener('dblclick',e=>{if(S.tool==='node'&&S.nodeMode==='edit')insertNodeAt(ptFromEvent(e));});
+// Keep the browser menu suppressed over the canvas, but do not mutate geometry.
+$('#artboard').addEventListener('contextmenu',e=>e.preventDefault());
 $('#stageViewport').addEventListener('wheel',e=>{if(!e.ctrlKey)return;e.preventDefault();setViewZoom(S.zoom*(e.deltaY>0?.88:1.12));},{passive:false});
 $('#fileProject').addEventListener('change',e=>{void loadProject(e.target.files[0]);e.target.value='';});
 $('#fileAssets').addEventListener('change',e=>{void importAssets([...e.target.files]);e.target.value='';});
