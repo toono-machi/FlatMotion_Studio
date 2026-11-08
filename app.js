@@ -9,6 +9,60 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const num=(v,f=0)=>Number.isFinite(+v)?+v:f;
 const fmtTime=n=>`${String(Math.floor(n/60)).padStart(2,'0')}:${String(Math.floor(n%60)).padStart(2,'0')}`;
 const PALETTE=['#604538','#97765f','#c78b7b','#e9b8a0','#f0d4af','#f8e4c7','#fff5e4','#4e676a','#78948c','#a5ba9d','#8296b7','#d7b5c0','#63505e','#3e3434'];
+// Color sets are intentionally independent from FMS project data.
+const COLOR_SETS_STORAGE='flatmotion.color-sets.v1';
+const COLOR_SETS_VERSION=1;
+let colorSets=[{id:'default',name:'標準カラー',colors:[...PALETTE]}];
+let activeColorSet='default';
+let selectedColorSlot=-1;
+const validHex=v=>typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v);
+function normalizeColorSets(raw){
+ const source=Array.isArray(raw)?raw:raw?.sets;
+ if(!Array.isArray(source)||!source.length||source.length>100)throw Error('カラーセットの形式が正しくありません。');
+ const seen=new Set();
+ return source.map((item,i)=>{
+  if(!item||!Array.isArray(item.colors)||item.colors.length>512)throw Error('カラーセットの色数が不正です。');
+  const id=(typeof item.id==='string'&&item.id.trim()&&!seen.has(item.id))?item.id:'set_'+i+'_'+Math.random().toString(36).slice(2,8);
+  seen.add(id);
+  return {id,name:String(item.name||`カラーセット ${i+1}`).trim().slice(0,60)||`カラーセット ${i+1}`,colors:item.colors.map(c=>{if(!validHex(c))throw Error('カラーコードは #RRGGBB で指定してください。');return c.toUpperCase();})};
+ });
+}
+function loadColorSets(){try{const data=JSON.parse(localStorage.getItem(COLOR_SETS_STORAGE)||'null');if(!data)return;colorSets=normalizeColorSets(data);activeColorSet=colorSets.some(c=>c.id===data.activeId)?data.activeId:colorSets[0].id;}catch(e){console.warn('カラーセット読み込み:',e);}}
+function saveColorSets(){try{localStorage.setItem(COLOR_SETS_STORAGE,JSON.stringify({version:COLOR_SETS_VERSION,activeId:activeColorSet,sets:colorSets}));}catch(e){toast('カラーセットのブラウザ保存に失敗しました。JSONへ保存してください。');}}
+function currentColorSet(){return colorSets.find(c=>c.id===activeColorSet)||colorSets[0];}
+function newColorSetId(){return 'colors_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,6);}
+function colorSetAction(action){
+ const set=currentColorSet();
+ if(action==='new'){
+  const name=prompt('新しいカラーセット名','新しいカラーセット');if(name===null)return;
+  const item={id:newColorSetId(),name:name.trim().slice(0,60)||'新しいカラーセット',colors:[]};colorSets.push(item);activeColorSet=item.id;selectedColorSlot=-1;
+ }else if(action==='rename'){
+  const name=prompt('カラーセット名を変更',set.name);if(name===null)return;set.name=name.trim().slice(0,60)||set.name;
+ }else if(action==='delete-set'){
+  if(colorSets.length===1){toast('最後のカラーセットは削除できません。');return;}
+  if(!confirm(`「${set.name}」を削除しますか？`))return;colorSets=colorSets.filter(item=>item.id!==set.id);activeColorSet=colorSets[0].id;selectedColorSlot=-1;
+ }else if(action==='put'){
+  if(!validHex(S.color))return;
+  if(selectedColorSlot>=0&&selectedColorSlot<set.colors.length){set.colors[selectedColorSlot]=S.color.toUpperCase();toast('選択色を上書きしました。');}
+  else {if(set.colors.length>=512){toast('1セットの登録上限は512色です。');return;}set.colors.push(S.color.toUpperCase());selectedColorSlot=set.colors.length-1;toast('現在の描画色を追加しました。');}
+ }else if(action==='remove'){
+  if(selectedColorSlot<0||selectedColorSlot>=set.colors.length)return;
+  set.colors.splice(selectedColorSlot,1);selectedColorSlot=-1;
+ }else if(action==='clear-selection'){selectedColorSlot=-1;
+ }else if(action==='export'){
+  const content={format:'FlatMotionColorSets',version:COLOR_SETS_VERSION,activeId:activeColorSet,sets:colorSets};
+  download(new Blob([JSON.stringify(content,null,2)],{type:'application/json'}),'FlatMotion_ColorSets.json');return;
+ }else if(action==='import'){$('#colorSetFile')?.click();return;}
+ saveColorSets();renderPalette();
+}
+async function importColorSetFile(file){if(!file)return;try{
+ const data=JSON.parse(await file.text());const sets=normalizeColorSets(data);
+ if(data?.format&&data.format!=='FlatMotionColorSets')throw Error('対応していないJSONです。');
+ if(!confirm(`${sets.length}セットを読み込み、現在のカラーセットを置き換えますか？`))return;
+ colorSets=sets;activeColorSet=colorSets.some(c=>c.id===data.activeId)?data.activeId:colorSets[0].id;selectedColorSlot=-1;saveColorSets();renderPalette();toast('カラーセットを読み込みました。');
+ }catch(err){toast('カラーセットを読み込めません: '+err.message);}}
+loadColorSets();
+
 const toolHints={crop:'四角形またはオブジェクトの形で指定した内側を削除します。交差では2つのオブジェクトが重なった部分を削除します。',select:'レイヤーのチェックボックスで複数選択すると、まとめて移動できます。「オブジェクトを統合」は元のパスと色を残す非破壊統合です。統合直後は自動施錠され、位置だけ移動可能です。鍵を解除すると展開して個別編集・統合解除できます。',node:'頂点の編集と変形を統合。先頭フレームでは基本形を編集し、2フレーム目以降は変形キーフレームを追加。編集／追加／削除を切替。Shift＋クリックで2点選択し均等に頂点を追加。',morph:'輪郭の点をドラッグして、そのフレームの変形キーを打ちます。四角形・楕円は右側からパスに変換。',mesh:'メッシュの交点をドラッグして素材を曲げます。右パネルからメッシュを作成。',pen:'ベジェ（塗り）：クリックで頂点を置いて閉じた形状を作ります。最初の点か「塗りを確定」で完成します。',strokePen:'ベジェ（線画）：クリックで点を打ち、Enterか「線画を確定」で仕上げます。頂点ツールで後から線の曲がり方を調整できます。',line:'直線：ドラッグで線を引きます。Shiftで45°刻みに固定できます。作成後も頂点追加・曲線化が可能です。',brush:'フリーハンド：ツール設定で「塗りつぶし／線画」、最大ポイント数、自動補正を選んでからドラッグします。',rect:'ドラッグして長方形のベクターパーツを描きます。',ellipse:'ドラッグして楕円のベクターパーツを描きます。',triangle:'ドラッグで三角形を描画します。向きは右側の「ツール」から切り替えられます。',triangleUp:'ドラッグで上向き三角形を作成します。',triangleDown:'ドラッグで下向き三角形を作成します。',pivot:'パーツの中心にある✳をドラッグして、関節の回転軸を移動。',hand:'手のひらツール：右側「ツール」で移動・回転・拡大縮小を選択し、キャンバス上をドラッグします。作品の描画内容には影響しません。',gradient:'グラデーション：対象をクリックして選び、上をドラッグして色の方向と範囲を指定します。ツール設定で線状／円状と、色→透明／色→色を切り替えられます。',raster:'ラフ作画：筆圧対応のラスターペン／消しゴム。ブラシ径はツール別に保存。手振れ補正と筆圧による太さの変化を設定できます。',text:'テキスト：キャンバスをクリックして文字レイヤーを追加。レイヤータブで縦書き・円形・アーチ配置、フォントや字間を編集。文字をパスへ変換すると頂点で編集できます。'};
 const emptyDoc=()=>({version:20,name:'新しいアニメーション',width:960,height:540,fps:12,seconds:6,background:'#fffaf3',transparent:false,gridVisible:false,gridSize:40,gridTransparency:0,gridColor:'#867567',layers:[],audio:[],references:[],fonts:[]});
 let doc=emptyDoc();
@@ -1651,7 +1705,16 @@ function renderStage(){syncPaletteOpacitySlider();ART.setAttribute('viewBox',`0 
  ART.innerHTML=bg+onion+drawLayers(S.frame,1,true,"stage")+gridPreviewMarkup()+(!S.playing?(S.tool==='crop'?cropSelectionOverlay():selectionOverlay())+temporaryOverlay()+gradientDragOverlay()+smartGuideMarkup():'');
  const empty=$('#emptyCanvas');empty.style.display=drawableLayers().length||S.pen.length?'none':'flex';
  $('#stageSize').textContent=`${doc.width} × ${doc.height}`;const penBar=$('#penControls');if(penBar){penBar.classList.toggle('hidden',!S.pen.length||!['pen','strokePen'].includes(S.tool));$('#penCount').textContent=S.pen.length+' 点';$('#penClose').style.display=S.tool==='strokePen'?'none':'';$('#penOpen').textContent=S.tool==='strokePen'?'線画を確定':'開いた線で確定';$('#penClose').disabled=S.pen.length<3;$('#penOpen').disabled=S.pen.length<2;}if(['pen','strokePen'].includes(S.tool)&&S.pen.length)$('#stageStatus').textContent=`${S.tool==='strokePen'?'線画ベジェ':'ベジェ曲線'}を作成中：${S.pen.length}点配置済み / Enterで確定 / Escで中止`;}
-function renderPalette(){let s='';PALETTE.forEach(c=>{s+=`<button class="swatch${S.color.toLowerCase()===c.toLowerCase()?' active':''}" data-color="${c}" title="${c}" style="background:${c}"></button>`;});$('#paletteGrid').innerHTML=s;$('#drawColor').value=S.color;$('#drawColorCode').textContent=S.color.toUpperCase();const mark=$('#paletteCurrentColor');if(mark)mark.style.backgroundColor=S.color;}
+function renderPalette(){
+ const set=currentColorSet();const select=$('#colorSetSelect');
+ if(select){select.innerHTML=colorSets.map(c=>`<option value="${c.id.replace(/[&"<>]/g,'')}">${esc(c.name)}</option>`).join('');select.value=activeColorSet;}
+ const grid=$('#paletteGrid');if(grid){grid.innerHTML=set.colors.map((c,i)=>`<button type="button" class="swatch${selectedColorSlot===i?' fm-color-slot-selected':''}" data-color-slot="${i}" aria-label="${c}（色を選択）" title="${c}" style="background:${c}"></button>`).join('');}
+ const status=$('#colorSetSelectionStatus');if(status)status.textContent=selectedColorSlot>=0&&selectedColorSlot<set.colors.length?`${selectedColorSlot+1}番の色を選択中（＋で上書き）`:'未選択（＋で末尾に追加）';
+ const add=$('#colorSetAdd');if(add)add.title=selectedColorSlot>=0?'選択色を現在の描画色で上書き':'現在の描画色を追加';
+ const remove=$('#colorSetRemove');if(remove)remove.disabled=selectedColorSlot<0||selectedColorSlot>=set.colors.length;
+ const clear=$('#colorSetClearSelection');if(clear)clear.disabled=selectedColorSlot<0;
+ $('#drawColor').value=S.color;$('#drawColorCode').textContent=S.color.toUpperCase();const mark=$('#paletteCurrentColor');if(mark)mark.style.backgroundColor=S.color;
+}
 // The thumbnail renderer is shared with the stage. Raster alpha is sampled
 // at low resolution, cached and used to crop previews to the painted area.
 const rasterPreviewCache=new Map();
@@ -3752,6 +3815,7 @@ const actions={flipHorizontal:()=>flipSelectedObjects('horizontal'),flipVertical
  convertPath:()=>{const l=sel();if(!l||l.locked)return;snapshot();if(convertToPath(l)){mutated();setTool('node');}else toast('この素材の輪郭は直接パス変換できません。メッシュをご利用ください。');},
  morphReset:()=>resetDeformFrame('morph'),meshReset:()=>resetDeformFrame('mesh'),morphClear:()=>clearDeform('morph'),meshClear:()=>{clearDeform('mesh');if(S.tool==='mesh')setTool('select');},
  clip:(b)=>{const l=layerBy(b.dataset.id);if(l)toggleClip(l,!l.clipToBelow);},undo,redo,fit:fitCanvas,resetView:fitCanvas,resetRotation:resetViewRotation,zoomIn:()=>setViewZoom(S.zoom*1.25),zoomOut:()=>setViewZoom(S.zoom/1.25),toggleGrid:()=>{snapshot();doc.gridVisible=doc.gridVisible===false;saveLocal();renderStage();updateButtons();const input=$('#gridVisibleCheck');if(input)input.checked=doc.gridVisible;},duplicate,mergeLayers:mergeSelectedLayers,unmergeLayers:unmergeSelectedLayers,unmergeThis:(b)=>{const l=layerBy(b.dataset.id);if(l?.mergeGroup){setSingleSelection(l.id);unmergeSelectedLayers();}},expandMerged:expandMergedGroup,newFolder:createFolder,addFolderChild:()=>$('#fileAssets').click(),ungroup:()=>{const l=sel();if(isFolder(l))ungroupFolder(l);},clearLayerContents, toggleFolder:(b)=>{const id=b.dataset.id;if(effectiveLocked(layerBy(id))){toast('ロックを解除すると展開できます。');return;}S.collapsedFolders.has(id)?S.collapsedFolders.delete(id):S.collapsedFolders.add(id);renderLayers();renderTimeline();},delete:deleteSelected,up:()=>reorder(1),down:()=>reorder(-1),addKey,removeKey,play:togglePlayback,first:()=>{stopPlayback();frameTo(0,{timeline:true});},next:()=>{stopPlayback();frameTo(S.frame+1,{timeline:true});},demo:makeDemo,clear:()=>{if(doc.layers.length&&!confirm('すべてのパーツを削除しますか？'))return;snapshot();doc.layers=[];setSingleSelection(null);S.frame=0;mutated();},visibility:(b)=>{const l=layerBy(b.dataset.id);if(!l)return;snapshot();l.visible=l.visible===false;mutated();},lock:(b)=>{const l=layerBy(b.dataset.id);if(!l||lockedFolderAncestor(l))return;snapshot();l.locked=!l.locked;if(l.locked&&isFolder(l)){S.collapsedFolders.add(l.id);if(sel()&&memberOfFolder(sel(),l.id))setSingleSelection(l.id);}if(l.locked&&S.selected===l.id){S.tool='select';S.pen=[];S.vertexSelected=false;}mutated();toast(l.locked?'ロックしました。移動・編集はできません。':'ロックを解除しました。移動・編集できます。');}};
+document.addEventListener('change',e=>{if(e.target.id==='colorSetSelect'){activeColorSet=e.target.value;selectedColorSlot=-1;saveColorSets();renderPalette();}else if(e.target.id==='colorSetFile'){void importColorSetFile(e.target.files?.[0]);e.target.value='';}});
 let lastLayerNameClick={id:'',at:0};
 document.addEventListener('change',e=>{if(e.target.name==='fmTriangleDirection'){S.triangleDirection=e.target.value==='down'?'down':'up';try{localStorage.setItem('flatmotion.triangle.direction',S.triangleDirection);}catch(_){}renderInspector();renderStage();return;}if(e.target.name==='fmNodeMode'){S.nodeMode=e.target.value;S.nodeSelected.clear();S.vertexSelected=false;renderStage();renderInspector();}else if(e.target.id==='fmNodeInsertCount'){S.nodeInsertCount=clamp(Math.round(num(e.target.value,1)),1,100);renderInspector();}});
 document.addEventListener('click',e=>{const remove=e.target.closest('[data-font-delete]');if(remove){e.stopPropagation();void removeCustomFont(remove.dataset.fontDelete);return;}
@@ -3769,6 +3833,8 @@ document.addEventListener('click',e=>{const remove=e.target.closest('[data-font-
  const inspectorTab=e.target.closest('button[data-inspector-tab]');if(inspectorTab){S.inspectorTab=inspectorTab.dataset.inspectorTab;applyInspectorTab();$('#inspector').scrollTop=0;return;}
  const audioMute=e.target.closest('[data-audio-mute]');if(audioMute){modifyAudio(audioMute.dataset.audioMute,'mute');return;}const audioRemove=e.target.closest('[data-audio-remove]');if(audioRemove){modifyAudio(audioRemove.dataset.audioRemove,'remove');return;}const action=e.target.closest('[data-action]');if(action){e.stopPropagation();const name=action.dataset.action;const fn=actions[name];if(fn)fn(action);return;}
  const tool=e.target.closest('button.tool-btn[data-tool]');if(tool){setTool(tool.dataset.tool);return;}
+ const colorSlot=e.target.closest('[data-color-slot]');if(colorSlot){const i=Number(colorSlot.dataset.colorSlot),c=currentColorSet().colors[i];if(!c)return;selectedColorSlot=i;S.color=c;const l=sel();if(l&&!effectiveLocked(l)&&['path','rect','ellipse','text'].includes(l.shape.type)){snapshot();l.fill=S.color;mutated();}else renderPalette();return;}
+ const colorButton=e.target.closest('[data-color-set-action]');if(colorButton){colorSetAction(colorButton.dataset.colorSetAction);return;}
  const swatch=e.target.closest('[data-color]');if(swatch){S.color=swatch.dataset.color;const l=sel();if(l&&!effectiveLocked(l)&&['path','rect','ellipse','text'].includes(l.shape.type)){snapshot();l.fill=S.color;mutated();}else renderPalette();return;}
  const deformPreset=e.target.closest('[data-deform-preset]');if(deformPreset){applyDeformPreset(deformPreset.dataset.deformPreset);return;}
  const preset=e.target.closest('[data-preset]');if(preset){applyPreset(preset.dataset.preset);return;}
