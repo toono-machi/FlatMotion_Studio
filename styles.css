@@ -1138,6 +1138,47 @@ button{transition:background .16s ease, color .16s ease, border-color .16s ease,
 /* Center the standalone sparkle within the decorative dashed circle. */
 .empty-illustration img{display:block;width:34px!important;height:34px!important;object-fit:contain!important;transform:none!important;}
 
+/* Selectable-object align and distribute toolbar (layer palette > ≡). */
+.fm-align-panel{padding:10px 12px 13px!important}
+.fm-align-hint{font-size:10px;line-height:1.5;color:#8c7665;margin-bottom:9px}
+.fm-align-label{font-size:11px;font-weight:700;color:#6a503f;margin:9px 0 4px}
+.fm-align-buttons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+.fm-align-buttons.fm-align-two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.fm-align-buttons button{display:flex;align-items:center;justify-content:center;min-width:0;height:30px;border:1px solid #d9c9b7;border-radius:5px;background:#fffaf2;color:#655345;padding:3px;cursor:pointer}
+.fm-align-buttons button:hover{background:#f1e2cf;border-color:#a88a6c}
+.fm-align-buttons button:active{background:#d9e3c8}
+.fm-align-buttons svg{pointer-events:none;flex:none}
+
+/* 3D workspace ground and perspective guides */
+.fm3d-view-settings{display:flex;flex-direction:column;gap:9px;padding:11px 12px;border:1px solid #d9c6b0;border-radius:9px;background:#fffcf5}
+.fm3d-view-settings .fm3d-check{display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
+.fm3d-view-settings input[type="checkbox"]{accent-color:#627d42;width:16px;height:16px;margin:0}
+.fm3d-guide-note{font-size:11px;line-height:1.55;color:#816b5c;margin:0}
+
+/* 3D Ground placement / lighting / viewport appearance */
+.fm3d-settings-section{display:flex;flex-direction:column;align-items:stretch;gap:8px;padding:10px 0;border-top:1px solid #e5d5c5}
+.fm3d-settings-section>strong,.fm3d-bg-label strong{font-size:12px;color:#594537}
+.fm3d-settings-section .fm3d-subbutton{font-size:12px;padding:8px;min-height:32px}
+.fm3d-bg-label{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.fm3d-bg-label input[type=color]{width:58px;height:30px;border:1px solid #cab6a0;border-radius:6px;padding:2px;background:#fffaf3;cursor:pointer}
+#fm3dLightPosition{font-variant-numeric:tabular-nums}
+
+/* Right-panel drag-to-light sphere. */
+.fm3d-light-editor{display:flex;flex-direction:column;align-items:center;gap:7px}
+#fm3dLightSphere{display:block;width:156px;height:156px;max-width:100%;border:1px solid #d1c2b5;border-radius:7px;background:#a4a4a4;touch-action:none;cursor:crosshair;user-select:none}
+.fm3d-light-editor .fm3d-guide-note{text-align:center}
+.fm3d-light-strength{display:grid;grid-template-columns:auto minmax(40px,1fr) 40px;align-items:center;gap:8px;font-size:12px;color:#594537}
+.fm3d-light-strength input[type=range]{width:100%;min-width:0;accent-color:#61783a}
+.fm3d-light-strength output{text-align:right;font-variant-numeric:tabular-nums}
+
+/* 3D workspace: history and bone pose controls */
+.fm3d-history{display:flex;gap:4px;padding-right:8px;margin-right:4px;border-right:1px solid #d5c2b1}
+.fm3d-history button{padding:7px 9px;background:#fffaf1;color:#604638;border:1px solid #c9ac93;border-radius:7px;cursor:pointer;font-size:12px;white-space:nowrap}
+.fm3d-history button:disabled{opacity:.35;cursor:default}
+.fm3d-bone-guide{font-size:11px;color:#826854;margin:5px 0 10px;line-height:1.5}
+.fm3d-options [data-three-bone-value]{font-size:11px;text-align:right;min-width:40px;font-variant-numeric:tabular-nums}
+.fm3d-options .fm3d-sliders input[type=range]{min-width:0}
+
 /* Named color sets: compact toolbar, no horizontal scrolling */
 .fm-color-set-tools{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,auto);gap:4px;margin-bottom:10px;align-items:center}
 .fm-color-set-tools select{min-width:0;width:100%;height:29px;border:1px solid var(--line);border-radius:6px;color:var(--brown2);background:#fff;padding:0 5px;font-size:11px}

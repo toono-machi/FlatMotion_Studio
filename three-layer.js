@@ -64,6 +64,27 @@ function makeBones(item){
  }
 }
 function selected(s){return s?.items.find(x=>x.id===s.selectedId)||null;}
+// Editor-only history: references to parsed models stay in memory, preventing heavyweight reimport.
+function stateSnapshot(s){return {items:s.items.map(item=>({id:item.id,settings:structuredClone(item.settings),visible:item.visible})),selectedId:s.selectedId,boneIndex:s.boneIndex,camera:[...s.cameraSettings],cameraTarget:s.cameraTarget.toArray(),wire:s.wire,ground:s.groundEnabled,grid:s.perspectiveGridEnabled,perspective:s.perspectiveStrength,background:s.backgroundColor,light:[...s.lightPosition],intensity:s.lightIntensity};}
+function historyUI(s){if(!s)return;$('#fm3dUndo').disabled=!s.historyUndo.length;$('#fm3dRedo').disabled=!s.historyRedo.length;}
+function remember(s){if(!s||s.historyBusy)return;s.historyUndo.push(stateSnapshot(s));if(s.historyUndo.length>80)s.historyUndo.shift();s.historyRedo.length=0;historyUI(s);}
+function applySnapshot(s,snap){s.historyBusy=true;try{
+ s.items=snap.items.map(record=>{const item=s.allItems.get(record.id);if(!item)return null;item.settings=structuredClone(record.settings);item.visible=record.visible;return item;}).filter(Boolean);
+ s.root.clear();for(const item of s.items){s.root.add(item.group);for(const [i,b] of item.bones.entries()){const r=item.restBones[i],a=item.settings.bones?.[i]||[0,0,0];b.rotation.set(r.x+rad(a[0]),r.y+rad(a[1]),r.z+rad(a[2]));}}
+ s.selectedId=s.items.some(item=>item.id===snap.selectedId)?snap.selectedId:null;s.boneIndex=snap.boneIndex??null;
+ s.cameraSettings=[...snap.camera];s.cameraTarget.fromArray(snap.cameraTarget);s.wire=snap.wire;s.groundEnabled=snap.ground;s.perspectiveGridEnabled=snap.grid;s.perspectiveStrength=snap.perspective;s.backgroundColor=snap.background;s.lightPosition=[...snap.light];s.lightIntensity=snap.intensity;
+ renderItems(s);setBoneSelection(s,s.boneIndex);syncInputs(s);updateTransform(s);draw(s);
+}finally{s.historyBusy=false;historyUI(s);}}
+function historyStep(s,redo=false){if(!s)return;const from=redo?s.historyRedo:s.historyUndo,to=redo?s.historyUndo:s.historyRedo;if(!from.length)return;to.push(stateSnapshot(s));applySnapshot(s,from.pop());historyUI(s);}
+function selectedBone(s){const item=selected(s);return item&&s.boneIndex!==null?item.bones[s.boneIndex]||null:null;}
+function setBoneSelection(s,index){if(!s)return;const item=selected(s);s.boneIndex=index===null||index===''||!item||!item.bones[+index]?null:+index;const select=$('#fm3dBone');select.value=s.boneIndex===null?'':String(s.boneIndex);syncBoneInputs(s);updateTransform(s);}
+function syncBoneInputs(s){const item=selected(s),n=s?.boneIndex;const a=item&&n!==null?item.settings.bones?.[n]||[0,0,0]:[0,0,0];document.querySelectorAll('[data-three-bone]').forEach(el=>{el.disabled=n===null;el.value=a[+el.dataset.threeBone]||0;const out=$(`[data-three-bone-value="${el.dataset.threeBone}"]`);if(out)out.textContent=Math.round(+el.value)+'°';});$('#fm3dBoneClear').disabled=n===null;}
+// Find the joint influencing the picked mesh triangle, rather than using the model origin.
+function boneFromIntersection(s,item,hit){const THREE=s.THREE;const mesh=hit.object;let node=mesh;while(node&&!node.isSkinnedMesh)node=node.parent;
+ if(node?.geometry?.attributes?.skinIndex&&hit.face){const skinI=node.geometry.attributes.skinIndex,skinW=node.geometry.attributes.skinWeight;const scores=new Map();for(const vi of [hit.face.a,hit.face.b,hit.face.c]){for(let k=0;k<4;k++){const weight=skinW.getComponent(vi,k);if(weight<.06)continue;const skeletonBone=node.skeleton?.bones[skinI.getComponent(vi,k)];const bi=item.bones.indexOf(skeletonBone);if(bi>=0)scores.set(bi,(scores.get(bi)||0)+weight);}}if(scores.size)return [...scores].sort((a,b)=>b[1]-a[1])[0][0];}
+ let nearest=null,dist=Infinity;for(const [i,b] of item.bones.entries()){const w=b.getWorldPosition(new THREE.Vector3()),d=w.distanceToSquared(hit.point);if(d<dist){nearest=i;dist=d;}}return nearest;
+}
+
 function initCanvas(s){
  const {THREE}=s,canvas=$('#fm3dCanvas');canvas.width=840;canvas.height=570;
  const renderer=new THREE.WebGLRenderer({canvas,alpha:true,antialias:true,preserveDrawingBuffer:true});renderer.setPixelRatio(1);renderer.setSize(840,570,false);renderer.outputColorSpace=THREE.SRGBColorSpace;
@@ -90,15 +111,36 @@ function initCanvas(s){
  const transform=new s.loaders.TransformControls(camera,canvas);
  transform.setSize(.82);
  scene.add(transform.getHelper());
+ transform.addEventListener('mouseDown',()=>remember(s));
  transform.addEventListener('dragging-changed',e=>{s.transformDragging=e.value;if(!e.value){syncInputs(s);draw(s);}});
  transform.addEventListener('objectChange',()=>{
   const item=selected(s);if(!item)return;
-  item.settings.pos=item.group.position.toArray().map(v=>Math.round(v*10000)/10000);
-  item.settings.rot=[item.group.rotation.x,item.group.rotation.y,item.group.rotation.z].map(v=>Math.round(v*180/Math.PI*100)/100);
+  const bone=selectedBone(s);
+  if(s.tool==='rotate'&&bone){const rest=item.restBones[s.boneIndex];item.settings.bones[s.boneIndex]=[bone.rotation.x-rest.x,bone.rotation.y-rest.y,bone.rotation.z-rest.z].map(v=>Math.round(v*180/Math.PI*100)/100);syncBoneInputs(s);}
+  else if(s.tool==='move'&&s.movePivot){const diff=s.movePivot.position.clone().sub(s.movePivotStart);item.settings.pos=item.settings.pos.map((v,i)=>Math.round((s.moveBasePos[i]+diff.getComponent(i))*10000)/10000);}
+  else{item.settings.pos=item.group.position.toArray().map(v=>Math.round(v*10000)/10000);item.settings.rot=[item.group.rotation.x,item.group.rotation.y,item.group.rotation.z].map(v=>Math.round(v*180/Math.PI*100)/100);}
   syncInputs(s);draw(s);
  });
  s.transform=transform;
+ const movePivot=new THREE.Group();movePivot.name='FM3D_TRANSLATE_PIVOT';scene.add(movePivot);s.movePivot=movePivot;s.moveBasePos=[0,0,0];s.movePivotStart=new THREE.Vector3();
  canvas.oncontextmenu=e=>e.preventDefault();
+ // Capture bone picking before TransformControls can stop bubbling events.
+ // A click on the skinned surface selects the corresponding joint; dragging
+ // an existing rotation gizmo still belongs exclusively to TransformControls.
+ let bonePointer=null;
+ canvas.addEventListener('pointerdown',e=>{
+  if(e.button!==0||s.tool!=='rotate'||s.transformDragging){bonePointer=null;return;}
+  bonePointer={id:e.pointerId,x:e.clientX,y:e.clientY,gizmo:!!transform.axis};
+ },true);
+ canvas.addEventListener('pointerup',e=>{
+  if(!bonePointer||bonePointer.id!==e.pointerId)return;
+  const start=bonePointer;bonePointer=null;
+  if(s.tool!=='rotate'||start.gizmo||s.transformDragging||Math.hypot(e.clientX-start.x,e.clientY-start.y)>6)return;
+  // Don't allow the legacy pointerup handler to treat the same click as a rotation drag.
+  s.drag=null;
+  pickItem(s,e);
+ },true);
+ canvas.addEventListener('pointercancel',()=>{bonePointer=null;},true);
  canvas.onpointerdown=e=>{
   if(e.button!==0&&e.button!==2||s.transformDragging)return;
   // Pick the light marker before any model gizmo or navigation action.
@@ -118,10 +160,11 @@ function initCanvas(s){
   }
   // TransformControls listens directly to the canvas. Its gizmo captures move/rotate drags.
   if(e.button===0&&(s.tool==='move'||s.tool==='rotate')&&transform.axis)return;
+  if(e.button===0&&s.tool==='rotate')return; // mesh click selects bones; only the ring rotates
   e.preventDefault();canvas.setPointerCapture(e.pointerId);
   const mode=e.button===2?'hand':s.tool;
   const obj=selected(s);
-  s.drag={id:e.pointerId,mode,x:e.clientX,y:e.clientY,moved:false,a:s.cameraSettings[0],p:s.cameraSettings[1],target:s.cameraTarget.clone(),pos:obj?[...obj.settings.pos]:null,itemId:obj?.id,rot:obj?[...obj.settings.rot]:null};
+  remember(s);s.drag={id:e.pointerId,mode,x:e.clientX,y:e.clientY,moved:false,a:s.cameraSettings[0],p:s.cameraSettings[1],target:s.cameraTarget.clone(),pos:obj?[...obj.settings.pos]:null,itemId:obj?.id,rot:obj?[...obj.settings.rot]:null};
   updateCursor(s);
  };
  canvas.onpointermove=e=>{
@@ -159,16 +202,24 @@ function initCanvas(s){
   updateCursor(s);try{if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);}catch{}
  };
  canvas.onpointerup=finish;canvas.onpointercancel=finish;canvas.onlostpointercapture=()=>{s.drag=null;updateCursor(s);};
- canvas.onwheel=e=>{e.preventDefault();s.cameraSettings[2]=Math.max(.3,Math.min(40,s.cameraSettings[2]*(e.deltaY>0?1.08:.92)));syncInputs(s);draw(s);};
+ canvas.onwheel=e=>{e.preventDefault();remember(s);s.cameraSettings[2]=Math.max(.3,Math.min(40,s.cameraSettings[2]*(e.deltaY>0?1.08:.92)));syncInputs(s);draw(s);};
  const container=canvas.parentElement;const resize=()=>{if(session!==s)return;const r=container.getBoundingClientRect();const w=Math.max(1,Math.round(r.width)),h=Math.max(1,Math.round(r.height));if(s.renderer.domElement.width!==w||s.renderer.domElement.height!==h){s.renderer.setSize(w,h,false);draw(s);}};s.resizeObserver=new ResizeObserver(resize);s.resizeObserver.observe(container);requestAnimationFrame(resize);
 }
 function objFromDrag(s,d){return s.items.find(x=>x.id===d.itemId);}
 function updateCursor(s){if(!s?.renderer)return;const canvas=s.renderer.domElement;canvas.dataset.tool=s.tool;canvas.classList.toggle('is-panning',!!s.drag&&s.drag.mode==='hand');}
 function updateTransform(s){
- if(!s?.transform)return;const item=selected(s);
+ if(!s?.transform)return;const item=selected(s),bone=selectedBone(s);
  if((s.tool==='move'||s.tool==='rotate')&&item&&item.visible){
-  s.transform.attach(item.group);s.transform.setMode(s.tool==='move'?'translate':'rotate');
-  s.transform.setSpace('world');
+  const target=s.tool==='rotate'&&bone?bone:s.tool==='move'?s.movePivot:item.group;
+  if(s.tool==='move'){
+   item.group.position.set(...item.settings.pos);item.group.rotation.set(...item.settings.rot.map(rad));item.group.scale.setScalar(Math.max(.01,Number(item.settings.scale)||1));
+   // A visible centered pivot fixes VRM/FBX assets whose model root is far from the visible geometry.
+   item.group.updateWorldMatrix(true,true);const bounds=new s.THREE.Box3().setFromObject(item.group,true);
+   const center=bounds.isEmpty()?item.group.getWorldPosition(new s.THREE.Vector3()):bounds.getCenter(new s.THREE.Vector3());
+   s.movePivot.position.copy(center);s.movePivotStart.copy(center);s.moveBasePos=[...item.settings.pos];
+  }
+  s.transform.attach(target);s.transform.setMode(s.tool==='move'?'translate':'rotate');
+  s.transform.setSpace(s.tool==='rotate'&&bone?'local':'world');
   const axis=s.rotationAxis==='vertical'?'X':s.rotationAxis==='horizontal'?'Y':'Z';
   s.transform.showX=s.tool==='move'||axis==='X';s.transform.showY=s.tool==='move'||axis==='Y';s.transform.showZ=s.tool==='move'||axis==='Z';
  }else s.transform.detach();
@@ -176,14 +227,19 @@ function updateTransform(s){
  updateCursor(s);
  document.querySelectorAll('[data-fm3d-tool]').forEach(b=>{const active=b.dataset.fm3dTool===s.tool;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active));});
  const rad=$('#fm3dAxisChoice');if(rad)rad.hidden=s.tool!=='rotate';
- $('#fm3dNoteText').textContent=s.tool==='hand'?'ドラッグ：視点を上下左右に平行移動／右ドラッグ：視点移動／ホイール：ズーム':s.tool==='move'?'矢印ハンドル：軸方向に移動／色付き平面：2軸同時移動／モデルクリック：選択':s.tool==='rotate'?'回転軸を選択し、リングをドラッグして回転／モデルクリック：選択':'ドラッグ：視点角度を変更／右ドラッグ：視点移動／ホイール：ズーム';
+ $('#fm3dNoteText').textContent=s.tool==='hand'?'ドラッグ：視点を上下左右に平行移動／右ドラッグ：視点移動／ホイール：ズーム':s.tool==='move'?'矢印ハンドル：軸方向に移動／色付き平面：2軸同時移動／モデルクリック：選択':s.tool==='rotate'?'モデルの関節をクリック：ボーン選択と回転ハンドル表示／回転軸を選択してドラッグ':'ドラッグ：視点角度を変更／右ドラッグ：視点移動／ホイール：ズーム';
 }
 function pickItem(s,event){
  if(!s?.renderer)return;const rect=s.renderer.domElement.getBoundingClientRect();if(!rect.width||!rect.height)return;
  const pointer=new s.THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-((event.clientY-rect.top)/rect.height*2-1));
  const caster=new s.THREE.Raycaster();caster.setFromCamera(pointer,s.camera);
  const intersections=caster.intersectObjects(s.items.filter(item=>item.visible).map(item=>item.group),true);
- for(const hit of intersections){let node=hit.object;while(node){const item=s.items.find(item=>item.group===node);if(item){selectItem(s,item.id);report('選択中：'+item.filename);return;}node=node.parent;}}
+ for(const hit of intersections){let node=hit.object;while(node){const item=s.items.find(item=>item.group===node);if(item){if(s.selectedId!==item.id)selectItem(s,item.id);if(s.tool==='rotate'&&item.bones.length){
+   const joint=boneFromIntersection(s,item,hit);
+   if(joint!==null){setBoneSelection(s,joint);report('選択中のボーン：'+(item.bones[joint]?.name||'Bone '+(joint+1)));}
+   else report('この部分には操作可能なボーンがありません。');
+  }else report('選択中：'+item.filename);
+  draw(s);return;}node=node.parent;}}
 }
 function draw(s){if(!s?.renderer)return;
  for(const item of s.items){item.group.visible=item.visible;item.group.position.set(...item.settings.pos);item.group.rotation.set(...item.settings.rot.map(rad));item.group.scale.setScalar(Math.max(0.01,Number(item.settings.scale)||1));
@@ -209,7 +265,7 @@ function putSelectedOnGround(s){
  draw(s);item.group.updateWorldMatrix(true,true);
  const bounds=new s.THREE.Box3().setFromObject(item.group,true);
  if(bounds.isEmpty()||!Number.isFinite(bounds.min.y)){report('接地位置を計算できません。');return;}
- const shift=FLOOR_Y-bounds.min.y;
+ remember(s);const shift=FLOOR_Y-bounds.min.y;
  item.settings.pos[1]=Math.round((item.settings.pos[1]+shift)*10000)/10000;
  syncInputs(s);draw(s);
  report('「'+item.filename+'」を地面に接地しました。');
@@ -230,7 +286,7 @@ function renderItems(s){
 function renderBones(s){
  const item=selected(s),sel=$('#fm3dBone');sel.innerHTML='<option value="">ボーンを選択</option>'+(item?.bones||[]).map((b,i)=>`<option value="${i}">${i+1}. ${escapeHtml(b.name||'Bone')}</option>`).join('');
  $('#fm3dBoneCount').textContent=`${item?.bones.length||0}本のボーン`;
- document.querySelectorAll('[data-three-bone]').forEach(el=>el.value=0);
+ const n=s.boneIndex;sel.value=n===null?'':String(n);syncBoneInputs(s);
 }
 function syncInputs(s){if(!s)return;const obj=selected(s);
  for(const el of document.querySelectorAll('#fm3dModal [data-three-setting]')){
@@ -247,26 +303,26 @@ function syncInputs(s){if(!s)return;const obj=selected(s);
  $('#fm3dBackground').value=s.backgroundColor;
  $('#fm3dLightIntensity').value=String(s.lightIntensity);$('#fm3dLightIntensityValue').textContent=s.lightIntensity.toFixed(2);drawLightSphere(s);
  const coordinates=$('#fm3dLightPosition');if(coordinates)coordinates.textContent=s.lightPosition.map(v=>Number(v).toFixed(2)).join(' / ');
- const n=$('#fm3dBone').value;if(n!==''){const a=obj?.settings.bones[n]||[0,0,0];document.querySelectorAll('[data-three-bone]').forEach(el=>el.value=a[+el.dataset.threeBone]||0);}
+ syncBoneInputs(s);
 }
-function selectItem(s,id){s.selectedId=id;renderItems(s);syncInputs(s);draw(s);}
+function selectItem(s,id){s.selectedId=id;s.boneIndex=null;renderItems(s);syncInputs(s);draw(s);}
 async function addModel(s,meta,{select=true}={}){
  const model=await parseModel(meta.source,meta.format,s.THREE,s.loaders);
  const item={id:++serial,source:meta.source,filename:meta.filename,format:meta.format,settings:{...defaultTransform(),...structuredClone(meta.settings||{})},visible:meta.visible!==false,model,group:new s.THREE.Group(),normalizer:new s.THREE.Group()};
  item.normalizer.add(model);item.group.add(item.normalizer);
- normalizeModel(item,s);makeBones(item);s.root.add(item.group);s.items.push(item);
+ normalizeModel(item,s);makeBones(item);s.root.add(item.group);s.items.push(item);s.allItems.set(item.id,item);
  if(select)s.selectedId=item.id;renderItems(s);syncInputs(s);draw(s);return item;
 }
 async function open({layer=null,onSave,documentWidth,documentHeight}){
  show();report('3Dエンジンを準備中…');$('#fm3dCommit').disabled=true;
  try{
   const {THREE,...loaders}=await loadEngine();if(session)session.renderer?.dispose();
-  const saved=layer?.shape?.threeD||{};const s={THREE,loaders,layer,onSave,documentWidth,documentHeight,items:[],selectedId:null,cameraSettings:[...(saved.camera||saved.settings?.camera||defaultScene().camera)],wire:!!(saved.wire||saved.settings?.wire),tool:'camera',rotationAxis:'horizontal',cameraTarget:new THREE.Vector3(...(saved.cameraTarget||[0,0,0])),groundEnabled:saved.ground!==false,perspectiveGridEnabled:!!saved.perspectiveGrid,perspectiveStrength:Number.isFinite(Number(saved.perspectiveStrength))?clamp(Number(saved.perspectiveStrength),0,100):50,backgroundColor:/^#[0-9a-f]{6}$/i.test(saved.background||'')?saved.background:'#f7f0e6',lightPosition:Array.isArray(saved.lightPosition)&&saved.lightPosition.length===3&&saved.lightPosition.every(Number.isFinite)?[...saved.lightPosition]:[1.2,1.6,.6],lightHandleEnabled:false,lightIntensity:Number.isFinite(saved.lightIntensity)?clamp(saved.lightIntensity,0,5):2.4,transformDragging:false};
+  const saved=layer?.shape?.threeD||{};const s={THREE,loaders,layer,onSave,documentWidth,documentHeight,items:[],selectedId:null,cameraSettings:[...(saved.camera||saved.settings?.camera||defaultScene().camera)],wire:!!(saved.wire||saved.settings?.wire),tool:'camera',rotationAxis:'horizontal',cameraTarget:new THREE.Vector3(...(saved.cameraTarget||[0,0,0])),groundEnabled:saved.ground!==false,perspectiveGridEnabled:!!saved.perspectiveGrid,perspectiveStrength:Number.isFinite(Number(saved.perspectiveStrength))?clamp(Number(saved.perspectiveStrength),0,100):50,backgroundColor:/^#[0-9a-f]{6}$/i.test(saved.background||'')?saved.background:'#f7f0e6',lightPosition:Array.isArray(saved.lightPosition)&&saved.lightPosition.length===3&&saved.lightPosition.every(Number.isFinite)?[...saved.lightPosition]:[1.2,1.6,.6],lightHandleEnabled:false,lightIntensity:Number.isFinite(saved.lightIntensity)?clamp(saved.lightIntensity,0,5):2.4,transformDragging:false,boneIndex:null,historyUndo:[],historyRedo:[],historyBusy:false,allItems:new Map()};
   session=s;initCanvas(s);
   const old=saved.source?[{source:saved.source,filename:saved.filename,format:saved.format,settings:saved.settings}]:[];
   const metas=Array.isArray(saved.models)?saved.models:old;
   for(const meta of metas){try{await addModel(s,meta);}catch(e){report('一部モデルを復元できませんでした：'+readableError(e));}}
-  renderItems(s);syncInputs(s);updateTransform(s);draw(s);
+  renderItems(s);syncInputs(s);updateTransform(s);draw(s);historyUI(s);
   if(!metas.length)report('「＋ モデルを追加」からOBJ / FBX / VRM / GLBを読み込んでください。');
   else if(s.items.length===metas.length)report(`${s.items.length}個のモデルを復元しました。モデルを選んで個別に操作できます。`);
  }catch(e){report('エンジン読み込み失敗：'+readableError(e)+'。ネット接続とGitHub Pages/localhostを確認してください。');}
@@ -276,14 +332,16 @@ async function fileChanged(files){const s=session;if(!s||!files?.length)return;f
  if(!['obj','fbx','vrm','glb','gltf'].includes(format)){report(file.name+'：未対応の形式です');continue;}
  if(file.size>80*1024*1024){report(file.name+'：80MBを超えています');continue;}
  try{report(file.name+' を読み込み中…');const source=arrayBufferToDataURL(await file.arrayBuffer());if(session!==s)return;
-  const item=await addModel(s,{source,format,filename:file.name});report(`${s.items.length}個のモデル／選択中：${item.filename}（${item.meshCount}メッシュ・${item.bones.length}ボーン）`);
+  remember(s);const item=await addModel(s,{source,format,filename:file.name});report(`${s.items.length}個のモデル／選択中：${item.filename}（${item.meshCount}メッシュ・${item.bones.length}ボーン）`);
  }catch(e){report(file.name+' の読み込みに失敗：'+readableError(e));console.error('[FlatMotion 3D]',e);}
 }}
-function applyBone(s){const item=selected(s),n=$('#fm3dBone').value;if(!item||n==='')return;const b=item.bones[+n],r=item.restBones[+n],a=item.settings.bones[n]||[0,0,0];if(b&&r)b.rotation.set(r.x+rad(a[0]),r.y+rad(a[1]),r.z+rad(a[2]));draw(s);}
+function applyBone(s){const item=selected(s),n=s.boneIndex===null?'':String(s.boneIndex);if(!item||n==='')return;const b=item.bones[+n],r=item.restBones[+n],a=item.settings.bones[n]||[0,0,0];if(b&&r)b.rotation.set(r.x+rad(a[0]),r.y+rad(a[1]),r.z+rad(a[2]));draw(s);}
 async function commit(){const s=session;if(!s?.items.length)return;$('#fm3dCommit').disabled=true;report('合成画像を生成中…');try{
  draw(s);s.transform.getHelper().visible=false;
- // Guides belong to the editor only; never bake the floor/grid into the 2D layer.
- s.ground.visible=false;s.lightHandle.visible=false;
+ // Bake visible ground and grid into the transparent 2D reference layer as requested.
+ s.ground.visible=!!(s.groundEnabled||s.perspectiveGridEnabled);
+ s.surface.visible=!!s.groundEnabled;s.coarseGrid.visible=!!s.groundEnabled&&!s.perspectiveGridEnabled;
+ s.perspectiveGrid.visible=!!s.perspectiveGridEnabled;s.lightHandle.visible=false;
  // Background is editor-only: keep the saved 2D layer transparent.
  s.renderer.setClearColor(0x000000,0);
  s.renderer.render(s.scene,s.camera);
@@ -296,9 +354,9 @@ $('#fm3dCommit').addEventListener('click',()=>void commit());
 $('#fm3dObjects').addEventListener('click',e=>{const button=e.target.closest('[data-3d-action]'),row=button?.closest('[data-3d-id]'),s=session;if(!row||!s)return;
  const id=+row.dataset['3dId'],index=s.items.findIndex(x=>x.id===id);if(index<0)return;const item=s.items[index],action=button.dataset['3dAction'];
  if(action==='select')selectItem(s,id);
- else if(action==='visible'){item.visible=!item.visible;renderItems(s);draw(s);}
- else if(action==='delete'){s.root.remove(item.group);s.items.splice(index,1);if(s.selectedId===id)s.selectedId=s.items[Math.min(index,s.items.length-1)]?.id||null;renderItems(s);syncInputs(s);draw(s);}
- else if(action==='up'||action==='down'){const j=index+(action==='up'?-1:1);if(j<0||j>=s.items.length)return;[s.items[index],s.items[j]]=[s.items[j],s.items[index]];renderItems(s);}
+ else if(action==='visible'){remember(s);item.visible=!item.visible;renderItems(s);draw(s);}
+ else if(action==='delete'){remember(s);s.root.remove(item.group);s.items.splice(index,1);if(s.selectedId===id)s.selectedId=s.items[Math.min(index,s.items.length-1)]?.id||null;renderItems(s);syncInputs(s);draw(s);}
+ else if(action==='up'||action==='down'){const j=index+(action==='up'?-1:1);if(j<0||j>=s.items.length)return;remember(s);[s.items[index],s.items[j]]=[s.items[j],s.items[index]];renderItems(s);}
 });
 $('#fm3dGroundSelected').addEventListener('click',()=>{if(session)putSelectedOnGround(session);});
 // Clip Studio-style lighting sphere: point on the sphere selects a directional light.
@@ -333,16 +391,23 @@ function setLightFromSphere(e){
 }
 {
  const sphere=$('#fm3dLightSphere');let activePointer=null;
- sphere.addEventListener('pointerdown',e=>{if(e.button!==0)return;activePointer=e.pointerId;sphere.setPointerCapture(e.pointerId);setLightFromSphere(e);e.preventDefault();});
+ sphere.addEventListener('pointerdown',e=>{if(e.button!==0)return;if(session)remember(session);activePointer=e.pointerId;sphere.setPointerCapture(e.pointerId);setLightFromSphere(e);e.preventDefault();});
  sphere.addEventListener('pointermove',e=>{if(activePointer===e.pointerId){setLightFromSphere(e);e.preventDefault();}});
  const end=e=>{if(activePointer===e.pointerId)activePointer=null;};
  sphere.addEventListener('pointerup',end);sphere.addEventListener('pointercancel',end);
 }
-$('#fm3dLightReset').addEventListener('click',()=>{if(!session)return;session.lightPosition=[1.2,1.6,.6];session.lightIntensity=2.4;syncInputs(session);draw(session);});
-$('#fm3dReset').addEventListener('click',()=>{const s=session;if(!s)return;const item=selected(s);if(item){item.settings=defaultTransform();item.bones.forEach((b,i)=>b.rotation.copy(item.restBones[i]));}else{s.cameraSettings=[...defaultScene().camera];s.cameraTarget.set(0,0,0);}renderBones(s);syncInputs(s);draw(s);});
+$('#fm3dLightReset').addEventListener('click',()=>{if(!session)return;remember(session);session.lightPosition=[1.2,1.6,.6];session.lightIntensity=2.4;syncInputs(session);draw(session);});
+$('#fm3dReset').addEventListener('click',()=>{const s=session;if(!s)return;remember(s);const item=selected(s);if(item){item.settings=defaultTransform();item.bones.forEach((b,i)=>b.rotation.copy(item.restBones[i]));}else{s.cameraSettings=[...defaultScene().camera];s.cameraTarget.set(0,0,0);}renderBones(s);syncInputs(s);draw(s);});
+
+$('#fm3dUndo').addEventListener('click',()=>historyStep(session));
+$('#fm3dRedo').addEventListener('click',()=>historyStep(session,true));
+$('#fm3dModal').addEventListener('pointerdown',e=>{if(e.target.matches('input[type=range],input[type=checkbox],input[type=color],input[type=number]')){if(session)remember(session);e.target.dataset.historyStarted='1';}},true);
+$('#fm3dModal').addEventListener('change',e=>{if(!session)return;if(e.target.matches('input[type=range]')){delete e.target.dataset.historyStarted;}else if(e.target.matches('input[type=checkbox],input[type=color],input[type=number]')){historyUI(session);}},true);
+document.addEventListener('keydown',e=>{if(!session||$('#fm3dModal').hidden||!(e.ctrlKey||e.metaKey)||e.altKey)return;const key=e.key.toLowerCase();if(key==='z'||key==='y'){e.preventDefault();historyStep(session,key==='y'||e.shiftKey);}});
+$('#fm3dBoneClear').addEventListener('click',()=>{const s=session,item=selected(s);if(!item||s.boneIndex===null)return;remember(s);item.settings.bones[s.boneIndex]=[0,0,0];applyBone(s);syncBoneInputs(s);});
 $('#fm3dModal').addEventListener('input',e=>{const s=session;if(!s)return;const el=e.target,item=selected(s);
  if(el.matches('[data-three-setting]')){const [key,i]=el.dataset.threeSetting.split(':');if(key==='camera')s.cameraSettings[+i]=+el.value;else if(item){if(key==='scale')item.settings.scale=+el.value;else item.settings[key][+i]=+el.value;}syncInputs(s);draw(s);}
- else if(el.matches('[data-three-bone]')){const n=$('#fm3dBone').value;if(n===''||!item)return;(item.settings.bones[n]||=[0,0,0])[+el.dataset.threeBone]=+el.value;applyBone(s);}
+ else if(el.matches('[data-three-bone]')){const n=s.boneIndex;if(n===null||!item)return;(item.settings.bones[n]||=[0,0,0])[+el.dataset.threeBone]=+el.value;applyBone(s);syncBoneInputs(s);}
  else if(el.id==='fm3dWire'){s.wire=el.checked;draw(s);}
  else if(el.id==='fm3dGround'){s.groundEnabled=el.checked;draw(s);}
  else if(el.id==='fm3dPerspectiveGrid'){s.perspectiveGridEnabled=el.checked;draw(s);}
@@ -350,7 +415,7 @@ $('#fm3dModal').addEventListener('input',e=>{const s=session;if(!s)return;const 
  else if(el.id==='fm3dBackground'){s.backgroundColor=el.value;draw(s);}
  else if(el.id==='fm3dLightIntensity'){s.lightIntensity=clamp(+el.value,0,5);$('#fm3dLightIntensityValue').textContent=s.lightIntensity.toFixed(2);drawLightSphere(s);draw(s);}
 });
-$('#fm3dBone').addEventListener('change',()=>syncInputs(session));
+$('#fm3dBone').addEventListener('change',e=>{if(session){setBoneSelection(session,e.target.value);draw(session);}});
 document.querySelectorAll('[data-fm3d-tool]').forEach(b=>b.addEventListener('click',()=>{if(!session)return;session.tool=b.dataset.fm3dTool;updateTransform(session);draw(session);}));
 document.querySelectorAll('input[name=fm3dRotateAxis]').forEach(b=>b.addEventListener('change',()=>{if(!session||!b.checked)return;session.rotationAxis=b.value;updateTransform(session);draw(session);}));
 window.FlatMotion3D={open};

@@ -2222,7 +2222,7 @@ async function open3DLayer(existing=false){const layer=existing?sel():null;if(ex
  snapshot();if(layer&&doc.layers.includes(layer)){layer.shape={type:'image',w:width,h:height,data,threeD};setSingleSelection(layer.id);}
  else{const created=newLayer({type:'image',w:width,h:height,data,threeD},doc.width/2,doc.height/2,'3D下書き：'+threeD.filename,{worldCoordinates:true});setSingleSelection(created.id);}
  mutated();toast('3D下書きをレイヤーへ反映しました。');}});
- }catch(e){console.error(e);toast('3D編集画面を開けませんでした。ブラウザ・通信環境をご確認ください。');}}
+ }catch(e){console.error('[FlatMotion 3D] 起動エラー:',e);const msg=e?.message||String(e);toast('3D編集画面を開けませんでした：'+msg);}}
 function renderInspector(){const el=$('#inspector');const l=sel();if(l?.shape?.type==='clone'&&!effectiveLocked(l)){el.innerHTML=cloneInspector(l);organizeInspectorTabs();return;}if(l?.shape?.threeD&&!effectiveLocked(l)){el.innerHTML=threeDInspector(l);organizeInspectorTabs();return;}if(l&&effectiveLocked(l)){el.innerHTML=lockedInspector(l);organizeInspectorTabs();return;}if(isFolder(l)){el.innerHTML=folderInspector(l)+folderOutlineInspector(l)+repeatInspector(l)+effectsInspector(l)+clipInspector(l)+projectInspector();organizeInspectorTabs();return;}if(!l){el.innerHTML=`<div class="inspector-empty"><div class="illu"><img src="assets/decorations/inspector-leaf.png" alt=""></div><strong>まずはパーツを描いてみましょう</strong><p>上部の四角形・楕円・ベジェ曲線で形を作れます。<br>パーツを選ぶと回転軸やアニメーションを設定できます。</p><button class="soft-btn primary wide" data-action="import">SVG / PNG のパーツを読み込む</button><div class="project-summary"><span>キャンバス <b>${doc.width} × ${doc.height}</b></span><span>フレームレート <b>${doc.fps} FPS</b></span><span>長さ <b>${doc.seconds} 秒</b></span><span>パーツ数 <b>${doc.layers.length}</b></span></div></div>${projectInspector()}`;organizeInspectorTabs();return;}
  const p=getPose(l),frames=Object.keys(l.keys).map(Number).sort((a,b)=>a-b),atKey=Object.hasOwn(l.keys,String(S.frame));const prevFrame=frames.filter(f=>f<=S.frame).at(-1)||0;const easing=l.keys[prevFrame]?.ease||'ease';
  const desc=l.shape.type==='merged'?'統合済みベクターオブジェクト':l.shape.type==='svg'?'SVG素材（元のパスを保持）':l.shape.type==='image'?'PNG素材（ラスターレイヤー）':l.shape.type==='path'?(l.shape.lineArt?'線画ベクターパス':'編集可能なパス'):l.shape.type==='rect'?'ベクター長方形':l.shape.type==='text'?'編集可能なテキスト':'ベクター楕円';
@@ -3782,9 +3782,46 @@ function subviewRemove(){const ref=subviewSelected();if(!ref)return;const index=
 function subviewNavigate(step){const refs=doc.references||[];if(!refs.length)return;const i=Math.max(0,refs.findIndex(r=>r.id===subview.selectedId));subviewSelect(refs[(i+step+refs.length)%refs.length].id);}
 function subviewZoomTo(value,pt){if(!subviewSelected())return;const before=subviewGeometry(),newZoom=clamp(value,.15,12);if(before&&pt){const pixelX=(pt.x-before.x)/before.scale,pixelY=(pt.y-before.y)/before.scale,newScale=before.scale*(newZoom/subview.zoom);subview.panX=pt.x-(before.w-before.sw*newScale)/2-pixelX*newScale;subview.panY=pt.y-(before.h-before.sh*newScale)/2-pixelY*newScale;}
  subview.zoom=newZoom;drawSubview();}
-function sampleSubviewColor(ev){const ref=subviewSelected(),loaded=ref&&subviewLoaded.get(ref.id),g=subviewGeometry();if(!loaded||!g)return;const bounds=$('#subviewCanvas').getBoundingClientRect(),px=ev.clientX-bounds.left,py=ev.clientY-bounds.top,x=Math.floor((px-g.x)/g.scale),y=Math.floor((py-g.y)/g.scale);
- if(x<0||x>=g.sw||y<0||y>=g.sh)return;const data=loaded.ctx.getImageData(x,y,1,1).data;if(!data[3]){$('#subviewColorHint').textContent='透明部分です（色を取得できません）';return;}
- const hex='#'+[data[0],data[1],data[2]].map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();subview.hex=hex;subview.alpha=data[3];S.color=hex;renderPalette();$('#subviewSampleSwatch').style.background=hex;$('#subviewHex').textContent=hex;$('#subviewColorHint').textContent=`RGB ${data[0]}, ${data[1]}, ${data[2]}${data[3]<255?' ／ 透明度 '+Math.round(data[3]/255*100)+'%':''}`;}
+// Preview sampling is intentionally independent from palette regeneration.
+// Mouse and Windows Ink pens use the same CSS-pixel -> source-image mapping.
+// A single committed swatch is shared by preview, draw color and explicit fill-apply.
+// Sample the DISPLAYED canvas (including interpolation), not a different source pixel.
+// One canonical color value drives the swatch, drawing color and apply button.
+// Pen position is read from PointerEvents, not from offsetX, the Windows cursor,
+// screenX, or the SVG artwork's transform.
+function updateSubviewSampleUI(hex,rgba){
+ subview.hex=hex;subview.alpha=rgba[3];S.color=hex;
+ const picker=$('#drawColor'),code=$('#drawColorCode'),mark=$('#paletteCurrentColor');
+ if(picker&&picker.value.toUpperCase()!==hex)picker.value=hex;
+ if(code)code.textContent=hex;
+ if(mark)mark.style.backgroundColor=hex;
+ const swatch=$('#subviewSampleSwatch'),label=$('#subviewHex'),hint=$('#subviewColorHint');
+ if(swatch)swatch.style.backgroundColor=hex;
+ if(label)label.textContent=hex;
+ if(hint)hint.textContent=`RGB ${rgba[0]}, ${rgba[1]}, ${rgba[2]}${rgba[3]<255?' ／ 透明度 '+Math.round(rgba[3]/255*100)+'%':''}`;
+}
+// Returns the sampled pixel data; only successful samples are committed.
+function readSubviewSample(point){
+ const canvas=$('#subviewCanvas'),bounds=canvas.getBoundingClientRect(),g=subviewGeometry();
+ if(!subviewSelected()||!g||!bounds.width||!bounds.height)return null;
+ const px=Number(point.clientX)-bounds.left,py=Number(point.clientY)-bounds.top;
+ if(!Number.isFinite(px)||!Number.isFinite(py))return null;
+ // Reject padding: it may be transparent and must not overwrite the last color.
+ if(px<g.x||py<g.y||px>=g.x+g.sw*g.scale||py>=g.y+g.sh*g.scale)return null;
+ if(px<0||py<0||px>=bounds.width||py>=bounds.height)return null;
+ // Use the same displayed pixels as the visual preview. These coordinates are
+ // in CSS pixels until the last step; canvas backing resolution can differ.
+ const cx=Math.min(canvas.width-1,Math.max(0,Math.floor(px*canvas.width/bounds.width)));
+ const cy=Math.min(canvas.height-1,Math.max(0,Math.floor(py*canvas.height/bounds.height)));
+ try{
+  const rgba=canvas.getContext('2d',{willReadFrequently:true}).getImageData(cx,cy,1,1).data;
+  if(!rgba[3])return null;
+  const hex='#'+[rgba[0],rgba[1],rgba[2]].map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();
+  return {hex,rgba:[...rgba],point:{clientX:Number(point.clientX),clientY:Number(point.clientY)}};
+ }catch(err){console.warn('スポイト取得:',err);return null;}
+}
+function commitSubviewSample(sample){if(!sample)return false;updateSubviewSampleUI(sample.hex,sample.rgba);return true;}
+function sampleSubviewColor(point){return commitSubviewSample(readSubviewSample(point));}
 async function copySubviewHex(){try{await navigator.clipboard.writeText(subview.hex);toast(`${subview.hex} をコピーしました。`);}catch(e){const input=document.createElement('textarea');input.value=subview.hex;document.body.appendChild(input);input.select();document.execCommand('copy');input.remove();toast('カラーコードをコピーしました。');}}
 function applySubviewColorToSelection(){const layer=sel();if(!layer||!['path','rect','ellipse'].includes(layer.shape?.type)||effectiveLocked(layer)){toast('塗りを変更できるベクターレイヤーを選択してください。');return;}
  snapshot();layer.fill=subview.hex;S.color=subview.hex;mutated();toast(`選択中の塗りを ${subview.hex} に変更しました。`);}
@@ -3797,9 +3834,91 @@ function initSubview(){const canvas=$('#subviewCanvas'),win=$('#subviewWindow');
  $('#subviewZoomIn').addEventListener('click',()=>subviewZoomTo(subview.zoom*1.25));$('#subviewZoomOut').addEventListener('click',()=>subviewZoomTo(subview.zoom/1.25));
  $('#subviewFit').addEventListener('click',()=>{subview.zoom=1;subview.panX=0;subview.panY=0;drawSubview();});
  $('#subviewCopyColor').addEventListener('click',()=>{void copySubviewHex();});$('#subviewApplyColor').addEventListener('click',applySubviewColorToSelection);
- canvas.addEventListener('contextmenu',e=>e.preventDefault());canvas.addEventListener('pointerdown',e=>{if(!subviewSelected()||![0,1,2].includes(e.button))return;const pan=subview.mode==='pan'||e.button!==0||e.altKey;subview.drag={id:e.pointerId,pan,startX:e.clientX,startY:e.clientY,startPanX:subview.panX,startPanY:subview.panY,moved:false};canvas.setPointerCapture(e.pointerId);win.classList.toggle('is-panning',pan);e.preventDefault();});
- canvas.addEventListener('pointermove',e=>{const d=subview.drag;if(!d||e.pointerId!==d.id)return;const dx=e.clientX-d.startX,dy=e.clientY-d.startY;if(Math.hypot(dx,dy)>4)d.moved=true;if(d.pan){subview.panX=d.startPanX+dx;subview.panY=d.startPanY+dy;scheduleSubviewDraw();}});
- const end=e=>{const d=subview.drag;if(!d||e.pointerId!==d.id)return;if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);subview.drag=null;win.classList.remove('is-panning');if(e.type==='pointerup'&&!d.pan&&!d.moved)sampleSubviewColor(e);};canvas.addEventListener('pointerup',end);canvas.addEventListener('pointercancel',end);
+ // Stop Windows Ink's long-press context menu/gesture selection in the image area.
+ const area=$('#subviewImageArea');
+ const preventInkMenu=e=>{if(e.target===canvas||e.target===area)e.preventDefault();};
+ canvas.addEventListener('contextmenu',preventInkMenu);
+ area.addEventListener('contextmenu',preventInkMenu);
+ canvas.addEventListener('dragstart',e=>e.preventDefault());
+ canvas.addEventListener('selectstart',e=>e.preventDefault());
+ // Pointer capture keeps pen motion on this canvas even at high zoom.
+ // Keep the last VALID on-contact sample. Windows Ink may generate a synthetic
+ // pointerup position, pointercancel, or lostpointercapture after a pen stroke.
+ let sampleFrame=0;
+ const cancelSampleFrame=()=>{if(sampleFrame){cancelAnimationFrame(sampleFrame);sampleFrame=0;}};
+ const pointOf=e=>({clientX:e.clientX,clientY:e.clientY});
+ const activeSample=(d,e)=>{
+  if(!d||d.pan)return;
+  const sample=readSubviewSample(pointOf(e));
+  if(sample){d.lastSample=sample;commitSubviewSample(sample);}
+ };
+ const queueSample=(d,e)=>{
+  // Coalesced stylus events carry higher-frequency ink positions. The most
+  // recent event in the batch corresponds to the actually displayed pointer.
+  const events=typeof e.getCoalescedEvents==='function'?e.getCoalescedEvents():null;
+  const recent=events?.length?events[events.length-1]:e;
+  if(Number.isFinite(recent.clientX)&&Number.isFinite(recent.clientY))d.latestPoint=pointOf(recent);
+  if(sampleFrame)return;
+  sampleFrame=requestAnimationFrame(()=>{
+   sampleFrame=0;
+   if(subview.drag!==d||d.pan)return;
+   const sample=readSubviewSample(d.latestPoint);
+   if(sample){d.lastSample=sample;commitSubviewSample(sample);}
+  });
+ };
+ const releaseInk=e=>{
+  const d=subview.drag;if(!d||e.pointerId!==d.id)return;
+  cancelSampleFrame();
+  if(!d.pan){
+   // The last contact position is the only authoritative final position for
+   // Windows Ink. Do NOT resample at pen-up; that event can jump a pixel/row.
+   // For mouse, release position is reliable, and it is safe to sample it.
+   if(d.pointerType==='pen'){
+    const last=readSubviewSample(d.latestPoint);
+    if(last)d.lastSample=last;
+    commitSubviewSample(d.lastSample);
+   }else if(e.type==='pointerup'){
+    const last=readSubviewSample(pointOf(e));
+    if(last)d.lastSample=last;
+    commitSubviewSample(d.lastSample);
+   }
+  }
+  subview.drag=null;win.classList.remove('is-panning');
+  try{if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);}catch(_){}
+  e.preventDefault();
+ };
+ canvas.addEventListener('pointerdown',e=>{
+  if(!subviewSelected()||subview.drag)return;
+  const pen=e.pointerType==='pen';
+  if(pen&&e.isPrimary===false)return;
+  if(!pen&&e.button!==0&&e.button!==1&&e.button!==2)return;
+  // A pen barrel-button is used to pan, rather than accidentally sampling.
+  const pan=subview.mode==='pan'||e.altKey||(!pen&&e.button!==0)||(pen&&e.button===2);
+  const d={id:e.pointerId,pointerType:e.pointerType,pan,startX:e.clientX,startY:e.clientY,startPanX:subview.panX,startPanY:subview.panY,latestPoint:pointOf(e),lastSample:null};
+  cancelSampleFrame();subview.drag=d;
+  try{canvas.setPointerCapture(e.pointerId);}catch(_){}
+  win.classList.toggle('is-panning',pan);
+  if(!pan)activeSample(d,e);
+  e.preventDefault();
+ });
+ canvas.addEventListener('pointermove',e=>{
+  const d=subview.drag;if(!d||e.pointerId!==d.id)return;
+  if(d.pan){subview.panX=d.startPanX+e.clientX-d.startX;subview.panY=d.startPanY+e.clientY-d.startY;scheduleSubviewDraw();}
+  else queueSample(d,e);
+  e.preventDefault();
+ });
+ // Windows Ink can deliver raw updates when pointermove is throttled.
+ canvas.addEventListener('pointerrawupdate',e=>{
+  const d=subview.drag;if(!d||e.pointerId!==d.id||d.pan)return;
+  queueSample(d,e);
+ });
+ canvas.addEventListener('pointerup',releaseInk);
+ canvas.addEventListener('pointercancel',releaseInk);
+ canvas.addEventListener('lostpointercapture',e=>{
+  const d=subview.drag;if(!d||d.id!==e.pointerId)return;
+  cancelSampleFrame();commitSubviewSample(d.lastSample);
+  subview.drag=null;win.classList.remove('is-panning');
+ });
  canvas.addEventListener('wheel',e=>{if(!subviewSelected())return;e.preventDefault();const b=canvas.getBoundingClientRect();subviewZoomTo(subview.zoom*(e.deltaY<0?1.14:1/1.14),{x:e.clientX-b.left,y:e.clientY-b.top});},{passive:false});
  let dragTitle=null;const bar=$('#subviewTitlebar');bar.addEventListener('pointerdown',e=>{if(e.button!==0||e.target.closest('button'))return;const b=win.getBoundingClientRect();win.style.left=b.left+'px';win.style.top=b.top+'px';win.style.right='auto';dragTitle={id:e.pointerId,x:e.clientX,y:e.clientY,left:b.left,top:b.top};bar.setPointerCapture(e.pointerId);e.preventDefault();});
  bar.addEventListener('pointermove',e=>{if(!dragTitle||dragTitle.id!==e.pointerId)return;win.style.left=clamp(dragTitle.left+e.clientX-dragTitle.x,0,Math.max(0,window.innerWidth-120))+'px';win.style.top=clamp(dragTitle.top+e.clientY-dragTitle.y,0,Math.max(0,window.innerHeight-60))+'px';});
